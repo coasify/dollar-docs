@@ -22,9 +22,7 @@ npm run serve  # Preview build locally
 
 ## Deployment
 
-Deployed automatically via Vercel on push to `main`.
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for DNS and Vercel setup instructions.
+Deployed automatically via Vercel on push to `main`. Build settings live in `vercel.json`.
 
 ## Structure
 
@@ -33,7 +31,7 @@ content/
 ├── idea.md              # What DollarStore is
 ├── quickstart.md        # Integration guide (placeholder)
 ├── concepts/            # How it works
-│   ├── dlrs.md
+│   ├── supply.md
 │   ├── queue.md
 │   ├── time-tradeoff.md
 │   └── resolution.md
@@ -42,10 +40,11 @@ content/
 │   ├── functions.md
 │   ├── events.md
 │   └── errors.md
-└── resources/           # Addresses, security, FAQ
+└── resources/           # Addresses, security, FAQ, terms
     ├── addresses.md
     ├── security.md
-    └── faq.md
+    ├── faq.md
+    └── terms.md
 ```
 
 ## Related

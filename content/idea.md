@@ -9,9 +9,17 @@ description: Understanding the DollarStore protocol
 
 > **1:1 stablecoin swaps, executed by autonomous smart contracts.**
 
-Users can swap USDC for USDT at exactly 1:1. No slippage. No fees.
+Users can swap between listed stablecoins at exactly 1:1. No slippage. No fees.
 
-When supply is available, swaps execute instantly. Users can always withdraw any stablecoin that's in supply—no restrictions, no waiting. The only time users queue is when requesting a specific stablecoin that isn't currently available.
+When the asset someone wants is available, the swap executes instantly. When it isn't, they get in
+line for it — and whatever *is* available fills right away. Getting in line is a choice, not a
+requirement: a swap can just as easily be told to revert instead.
+
+## How liquidity is organized
+
+A **hub** pool holds the core stablecoins. Each additional stablecoin gets its own **spoke** pool,
+funded by liquidity providers and paired against the hub. Swaps route hub-to-hub, hub-to-spoke or
+spoke-to-hub, always at par. See [Supply](/concepts/supply) for how the two sides work.
 
 ## Why this matters
 
@@ -23,4 +31,5 @@ Large swaps on AMMs require splitting orders, monitoring execution, and managing
 
 - **Aggregators** integrating stablecoin routes (1inch, CowSwap, 0x)
 - **Protocols** needing predictable stablecoin conversion
+- **Issuers** who want a par-value venue for their stablecoin, listed as its own spoke
 - **Anyone** moving stablecoins at scale

@@ -44,7 +44,6 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/dollarstore-social.png',
     colorMode: {
       defaultMode: 'dark',
       disableSwitch: true, // Dark only
@@ -109,20 +108,20 @@ const config: Config = {
           ],
         },
         {
-          title: 'Contracts (Sepolia)',
+          title: 'Protocol',
           items: [
             {
-              label: 'DollarStore',
-              href: 'https://sepolia.etherscan.io/address/0x0D748365aA0A38EBaF6Df0C46f0Ebf2D79837c30',
+              label: 'Addresses',
+              to: '/resources/addresses',
             },
             {
-              label: 'DLRS Token',
-              href: 'https://sepolia.etherscan.io/address/0xe78e2CfC18DaB60dbfEEBd83A7562D241Fc295F0',
+              label: 'Security',
+              to: '/resources/security',
             },
           ],
         },
       ],
-      copyright: `Unaudited software. Use at your own risk.`,
+      copyright: `Experimental software, not yet deployed. Use at your own risk.`,
     },
     prism: {
       theme: prismThemes.dracula,

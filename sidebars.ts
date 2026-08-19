@@ -10,6 +10,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'concepts/supply',
+        'concepts/spokes',
         'concepts/queue',
         'concepts/time-tradeoff',
         'concepts/resolution',

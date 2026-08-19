@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 5
 title: How Swaps Resolve
 description: The complete flow of a swap transaction
 ---
@@ -8,111 +8,169 @@ description: The complete flow of a swap transaction
 
 This page explains the complete lifecycle of a swap, from input to output.
 
+The examples name `USDC` and `USDT` for readability. They are placeholders — which assets the hub holds
+is a governance decision, and the mechanics below hold for any listed pair.
+
 ## Direct swap flow
 
-When calling [`swap`](/capabilities/functions#swap)`(fromStablecoin, toStablecoin, amount, queueIfUnavailable)`:
+When calling [`swap`](/capabilities/functions#swap)`(offerAsset, wantAsset, amount, minAmountOut, tip, deadline)`:
 
 ```
-1. Protocol transfers fromStablecoin from user to contract
+1. Validate
+   → deadline not passed, tip == 0, offerAsset != wantAsset
+   → classify the route: hub->hub, hub->spoke or spoke->hub (spoke->spoke reverts)
+   → offerAsset must be listed, unpaused, on peg, with a fresh price feed
 
-2. Process fromStablecoin queue (FIFO)
-   → Fill waiting positions with incoming tokens
-   → Add remainder to supply
+2. Pull offerAsset from the user (exact amount, sub-unit dust stays in the wallet)
 
-3. Check toStablecoin supply
+3. Fill from the exact-opposite (wantAsset -> offerAsset) queue
+   → those owners receive offerAsset; their escrowed wantAsset goes to the swapper
+   → peer-to-peer: touches no protocol reserves
 
-4a. If supply >= amount:
-    → Protocol transfers toStablecoin to user
-    → Done (instant swap)
+4. If anything remains, settle the same-direction (offerAsset -> wantAsset) queue
+   from reserves, in FIFO order, up to 8 positions
 
-4b. If supply < amount:
-    → If some supply available (partial fill):
-      - Protocol transfers available amount to user
-      - Remaining either queued (if queueIfUnavailable = true)
-        or user takes back their remaining fromStablecoin (if false)
-    → If zero supply:
-      - Queue entire amount (if queueIfUnavailable = true)
-      - REVERT (if queueIfUnavailable = false)
+5. If that queue is now empty, fill the rest from protocol reserves on the route
+
+6. Require amountFilled >= minAmountOut, else revert
+
+7. Send the filled wantAsset to the user
+
+8. Escrow any remainder as a new position at the tail of the (offerAsset -> wantAsset) queue
 ```
 
-**Note:** For "all or nothing" behavior, use `queueIfUnavailable = false` and rely on the revert when supply is insufficient.
+**Note:** for "all or nothing" behavior, set `minAmountOut` to the full normalized amount, or use
+`swapExactInput`.
 
-## Example: Full instant swap
+## What a reserve fill moves
+
+Step 5 is the only step that touches pool accounting, and what it moves depends on the route.
+
+| Route | Effect |
+|-------|--------|
+| hub → hub | Hub reserve of `wantAsset` down, hub reserve of `offerAsset` up. Reserve-neutral: no DLRS minted or burned |
+| hub → spoke | Spoke reserve of `wantAsset` down, hub reserve of `offerAsset` up, and the spoke's DLRS-side reserve up |
+| spoke → hub | Hub reserve of `wantAsset` down, spoke reserve of `offerAsset` up, and the spoke's DLRS-side reserve down |
+
+For a spoke → hub swap, instant liquidity is therefore capped by both the hub reserve of the wanted
+asset *and* the spoke's DLRS-side reserve above its protected minimum, whichever is smaller.
+
+## Example: full instant swap from reserves
 
 ```
 State before:
-  USDC in supply: 10,000
-  USDT in supply: 5,000
-  USDC queue: empty
+  Hub USDC reserve: 10,000
+  Hub USDT reserve: 5,000
+  Both USDC->USDT and USDT->USDC queues: empty
 
 User swaps 3,000 USDC → USDT:
 
-1. 3,000 USDC transferred to contract
-2. USDC queue is empty, so 3,000 added to supply
-3. USDT in supply (5,000) >= 3,000 ✓
-4. 3,000 USDT transferred to user
+1. 3,000 USDC pulled from the user
+2. Opposite (USDT->USDC) queue is empty — no peer match
+3. Same-direction queue is empty, so reserves are reachable
+4. USDT reserve (5,000) covers 3,000 ✓
+5. 3,000 USDT sent to the user
 
 State after:
-  USDC in supply: 13,000
-  USDT in supply: 2,000
+  Hub USDC reserve: 13,000
+  Hub USDT reserve: 2,000
 ```
 
-## Example: Partial fill with queue
+## Example: peer match against the opposite queue
 
 ```
 State before:
-  USDC in supply: 10,000
-  USDT in supply: 1,000
-  USDT queue: empty
+  Hub USDT reserve: 0
+  USDT->USDC queue: [Alice: 3,000 USDT escrowed, wants USDC]
 
-User swaps 3,000 USDC → USDT (queueIfUnavailable = true):
+User swaps 3,000 USDC → USDT:
 
-1. 3,000 USDC transferred to contract
-2. USDC queue empty, 3,000 added to supply
-3. USDT in supply (1,000) < 3,000
-4. 1,000 USDT transferred to user (partial)
-5. User gets in line for remaining 2,000 USDT
+1. 3,000 USDC pulled from the user
+2. Opposite queue match:
+   → Alice receives 3,000 USDC, her position closes
+   → her escrowed 3,000 USDT goes to the swapper
+3. 3,000 USDT sent to the user
 
 State after:
-  USDC in supply: 13,000
-  USDT in supply: 0
-  USDT queue: [User: 2,000]
+  Hub USDT reserve: 0        (untouched — no reserves were involved)
+  USDT->USDC queue: empty
 ```
 
-## Example: Queue gets filled
+Two users with opposite needs settle against each other, with no reserves in the middle.
+
+## Example: partial fill with queue
+
+```
+State before:
+  Hub USDC reserve: 10,000
+  Hub USDT reserve: 1,000
+  Both queues: empty
+
+User swaps 3,000 USDC → USDT with minAmountOut = 0:
+
+1. 3,000 USDC pulled from the user
+2. Opposite queue empty
+3. Same-direction queue empty, reserves reachable
+4. USDT reserve (1,000) < 3,000 → fill 1,000
+5. 1,000 USDT sent to the user
+6. Remaining 2,000 USDC escrowed at the tail of the USDC->USDT queue
+
+State after:
+  Hub USDC reserve: 11,000
+  Hub USDT reserve: 0
+  USDC->USDT queue: [User: 2,000 USDC escrowed]
+```
+
+Had `minAmountOut` been set to 3,000, the whole call would have reverted with `MinAmountNotMet` instead —
+nothing filled, nothing queued.
+
+## Example: the queue gets filled
 
 Continuing from above:
 
 ```
 State:
-  USDT in supply: 0
-  USDT queue: [User: 2,000]
+  Hub USDT reserve: 0
+  USDC->USDT queue: [User: 2,000 USDC escrowed]
 
-Someone supplies 5,000 USDT:
+Someone deposits 5,000 USDT into the hub:
 
-1. 5,000 USDT transferred to contract
-2. Process USDT queue:
-   → User receives 2,000 USDT (leaves queue)
-3. Remaining 3,000 added to supply
+  Hub USDT reserve: 5,000
+  DLRS minted to the depositor: 5,000
+
+The queued position is now settleable. It clears on the next swap that
+would otherwise touch reserves on that route, or immediately if anyone calls:
+
+  processQueue(USDC, USDT, maxPositions)
+
+  → User receives 2,000 USDT, position closes
+  → their escrowed 2,000 USDC moves into hub reserves
 
 State after:
-  USDT in supply: 3,000
-  USDT queue: empty
+  Hub USDC reserve: 13,000
+  Hub USDT reserve: 3,000
+  USDC->USDT queue: empty
 ```
+
+A hub deposit does not settle queues by itself — settlement is triggered by swaps on that route, by a
+spoke liquidity deposit, or by an explicit `processQueue` call. Since `processQueue` is permissionless,
+anyone can push it, and the caller chooses how many positions to drain. See [how much settles per
+transaction](/concepts/queue#how-much-settles-per-transaction).
 
 ## Aggregator flow
 
-The [`swapExactInput`](/capabilities/functions#swapexactinput) function follows a simpler flow:
+The [`swapExactInput`](/capabilities/functions#swapexactinput) function follows the same fill logic with
+one difference: it never queues.
 
 ```
-1. Check deadline hasn't passed
-2. Check toStablecoin supply >= amountIn
-   → If not, REVERT (no partial fills, no queue)
-3. Transfer fromStablecoin from user
-4. Process fromStablecoin queue
-5. Add remainder to fromStablecoin supply
-6. Deduct from toStablecoin supply
-7. Transfer toStablecoin to recipient
+1. Check the deadline
+2. Validate and classify the route; check the offer asset is unpaused and on peg
+3. Pull offerAsset from the user
+4. Fill from the opposite queue, then FIFO-settle, then reserves
+5. If the fill is short of the full amount, REVERT (no partial fills, no queue)
+6. Require filled >= minAmountOut, else revert
+7. Send wantAsset to msg.sender
 ```
 
-This guarantees: either full execution or complete failure. No intermediate states.
+This guarantees either full execution or complete failure — no intermediate states. Note that the output
+goes to the caller, so a router receives the tokens and forwards them itself.

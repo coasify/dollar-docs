@@ -11,7 +11,7 @@ The DollarStore protocol consists of two contracts:
 | Contract | Purpose |
 |----------|---------|
 | **DollarStore** | Main protocol logic—pools, deposits/withdrawals, directed swaps, queues, risk controls. A UUPS proxy: integrate against the proxy address, never the implementation |
-| **DLRS** | Non-transferable 6-decimal receipt token; a 1:1 claim on hub reserves. Immutable, not upgradeable |
+| **DLRS** | Non-transferable 6-decimal receipt token, minted 1:1 when a hub stablecoin is deposited. Immutable, not upgradeable |
 
 ## Pools
 
@@ -48,11 +48,10 @@ Read `assetDecimals(asset)` and `assetScalingFactor(asset)` to convert.
 
 ## Supported stablecoins
 
-The hub launches with **USDC and USDS**. Every other stablecoin joins as its own spoke — **USDS** is
-expected to be the first one.
+The hub launches with **USDC and USDS**. Every other stablecoin joins as its own spoke.
 
 Examples throughout these docs follow that layout: a hub-to-hub swap is USDC ↔ USDS, and a hub-to-spoke
-swap is USDC ↔ USDS.
+swap is USDC ↔ USDT.
 
 The set is governed and grows over time, so resolve it at runtime rather than hardcoding:
 
@@ -124,8 +123,8 @@ shares instead. Use `redeemSpoke` to exit proportionally across both sides of th
 ## Key invariants
 
 1. **1:1 ratio**: every swap and every deposit/withdrawal is 1:1 in normalized units. No fees, no curve.
-2. **DLRS is fully backed**: total DLRS supply equals the sum of hub reserves; queue escrow is never
-   counted as backing.
+2. **DLRS supply matches reserves**: total DLRS supply equals the sum of hub reserves; queue escrow is
+   never counted as a reserve.
 3. **FIFO ordering**: each directed `(offerAsset → wantAsset)` queue is strictly first-in-first-out, and
    a swapper only reaches reserves once the queue ahead of it is cleared.
 4. **Exits stay open**: `withdraw`, `redeemSpoke` and `cancelQueue` are not blocked by pause.

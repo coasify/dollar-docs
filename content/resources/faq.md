@@ -11,7 +11,7 @@ description: Frequently asked questions
 ### What is DollarStore?
 
 DollarStore is open-source smart contract software that enables zero-fee stablecoin swaps. Users can
-swap between listed stablecoins at exactly 1:1, with no slippage and no fees.
+swap between listed stablecoins at 1:1, with no slippage and no fees.
 
 ### What's the catch?
 
@@ -22,21 +22,20 @@ guarantee — a position fills as reserves arrive.
 ### Why use this instead of Uniswap?
 
 For users swapping stablecoins who care more about price than speed. On a DEX, users lose 0.01-0.3% to
-slippage and fees. The DollarStore protocol executes at exactly 1:1.
+slippage and fees. The DollarStore protocol executes at 1:1.
 
 ### Which stablecoins are supported?
 
-The hub launches with **USDC and USDS**. Other stablecoins join as spokes, and **USDT** is expected to
-be the first one listed.
+The hub launches with **USDC and USDS**. Other stablecoins join as spokes.
 
 The set is governed and grows over time, so read it live with `getPoolAssets(0)` and `isAssetListed()`
 rather than hardcoding a pair.
 
 ### What are hub and spoke pools?
 
-The **hub** (poolId 0) holds the core stablecoins — USDC and USDS at launch — and is the pool DLRS is a
-claim on. Each additional stablecoin gets its own **spoke** pool (poolId >= 1), funded by liquidity
-providers and paired against a DLRS-side reserve backed by hub assets. Swaps route hub-to-hub,
+The **hub** (poolId 0) holds the core stablecoins — USDC and USDS at launch — and is the pool DLRS
+represents. Each additional stablecoin gets its own **spoke** pool (poolId >= 1), funded by liquidity
+providers and paired against a hub-side reserve. Swaps route hub-to-hub,
 hub-to-spoke or spoke-to-hub; a direct spoke-to-spoke swap is rejected on-chain and has to be done as
 two legs through the hub.
 
@@ -44,7 +43,7 @@ So a USDC ↔ USDS swap is hub-to-hub, and a USDC ↔ USDT swap crosses into the
 
 ### Is there a token?
 
-DLRS is an internal accounting receipt: a 1:1 claim on the hub reserves, minted when you deposit a hub
+DLRS is an internal accounting receipt, minted when you deposit a hub
 asset. It is not a governance token, a stablecoin, or a tradeable asset. Spoke liquidity providers get
 non-transferable receipt shares instead, tracked per pool.
 
@@ -101,7 +100,7 @@ queue for the remainder. Cancelling then returns whatever offer asset is still e
 
 ### What is DLRS?
 
-DLRS is a non-transferable receipt representing a 1:1 claim on the hub reserves. Deposit 1,000 units of
+DLRS is a non-transferable receipt, minted when you deposit a hub asset. Deposit 1,000 units of
 a hub asset and 1,000 DLRS is minted to you; burn it with `withdraw` to take out any hub asset 1:1.
 It has 6 decimals, matching the protocol's normalized accounting unit.
 
@@ -115,11 +114,11 @@ No. DLRS is soulbound. Calls to `transfer()`, `transferFrom()` and `approve()` r
 Burn it through `withdraw` to take out any hub asset that has reserves, 1:1. Withdrawals are an exit
 path and are not blocked by pause.
 
-### Is DLRS fully backed?
+### How is DLRS accounted for?
 
-Yes. Total DLRS supply equals the sum of hub reserves, and queue escrow is never counted as backing.
+Total DLRS supply equals the sum of hub reserves, and queue escrow is never counted as a reserve.
 `syncReserves` — the only function that can reduce reserves — only ever decreases them, and is a
-governor decision behind the timelock precisely because it marks down that backing.
+governor decision behind the timelock precisely because it marks those reserves down.
 
 ---
 

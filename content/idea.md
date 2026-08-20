@@ -9,7 +9,7 @@ description: Understanding the DollarStore protocol
 
 > **1:1 stablecoin swaps, executed by autonomous smart contracts.**
 
-Users can swap between listed stablecoins at exactly 1:1. No slippage. No fees.
+Users can swap between listed stablecoins at 1:1. No slippage. No fees.
 
 Swaps execute when reserves allow. When the asset someone wants is available, the swap settles against
 those reserves; when it isn't, they can get in line for it, and whatever *is* available fills against

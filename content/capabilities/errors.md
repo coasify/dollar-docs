@@ -221,7 +221,7 @@ The caller tried to cancel a position they do not own.
 ## Risk control errors
 
 Inflows—deposits, swaps, and queue settlements—are gated on the offer asset being unpaused, on peg, and
-backed by a fresh oracle round. Exits are not.
+priced by a fresh oracle round. Exits are not.
 
 ### DepositsPaused
 

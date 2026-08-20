@@ -5,7 +5,8 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
-    "build": "docusaurus build",
+    "check:legal": "node scripts/check-legal-copy.mjs",
+    "build": "node scripts/check-legal-copy.mjs && docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",

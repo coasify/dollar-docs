@@ -28,8 +28,8 @@ interface below is what you will integrate against.
 
 :::info Assets in these examples
 The hub launches with **USDC and USDS**, and the examples below swap between them. Other stablecoins
-join as spokes — **USDS** is expected to be the first. The listed set is governed and grows, so resolve
-it at runtime instead of hardcoding: see [Discovering what is listed](#discovering-what-is-listed).
+join as spokes. The listed set is governed and grows, so resolve it at runtime instead of hardcoding:
+see [Discovering what is listed](#discovering-what-is-listed).
 :::
 
 ## Units
@@ -43,7 +43,7 @@ uint256 units  = nativeAmount / scaling;
 uint256 native = units * scaling;
 ```
 
-Because the rate is exactly 1:1, the normalized amount of your input is also the maximum you can get out.
+Because the rate is 1:1, the normalized amount of your input is also the maximum you can get out.
 
 ## Swapping from a contract
 

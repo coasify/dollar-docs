@@ -13,7 +13,7 @@ out at any time — withdrawals are an exit path and keep working even when the 
 
 | Pool | id | What it holds |
 |------|----|---------------|
-| **Hub** | `0` | The core stablecoins, whichever governance lists. It is the pool DLRS is a claim on |
+| **Hub** | `0` | The core stablecoins, whichever governance lists. It is the pool DLRS represents |
 | **Spoke** | `>= 1` | One additional stablecoin each, paired against a DLRS-side reserve funded with hub assets |
 
 An asset belongs to exactly one pool. Adding a stablecoin to the hub or opening a spoke for it is a
@@ -29,7 +29,7 @@ Supply 500 USDS   → 500 DLRS minted
 ```
 
 DLRS is fungible regardless of which stablecoin was supplied. 1,000 DLRS from a USDC supply is identical
-to 1,000 DLRS from a USDS supply — both are a claim on the same hub basket.
+to 1,000 DLRS from a USDS supply — both represent the same hub basket.
 
 ## Withdrawing from the hub
 
@@ -71,7 +71,7 @@ supplier — it stays in their wallet.
 
 DLRS is a non-transferable ERC-20 with 6 decimals, minted only by the protocol. It cannot be
 transferred, traded, or used outside the protocol; `transfer`, `transferFrom` and `approve` all revert.
-It is fully backed — total supply equals the sum of hub reserves, and queue escrow is never counted as
-backing.
+Total supply equals the sum of hub reserves, and queue escrow is never counted as a
+reserve.
 
 See [Addresses](/resources/addresses) for deployment status.

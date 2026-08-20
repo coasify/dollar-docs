@@ -10,15 +10,15 @@ A spoke is how a stablecoin joins the protocol without the hub taking on its ris
 
 ## What a spoke is
 
-**A par-value pair: one stablecoin against hub-backed dollars.**
+**A par-value pair: one stablecoin against hub-side dollars.**
 
-The hub holds the core stablecoins and is what DLRS is a claim on. Every additional stablecoin gets its
+The hub holds the core stablecoins and is what DLRS represents. Every additional stablecoin gets its
 own spoke pool, and each spoke is isolated — its own liquidity, its own providers, its own risk.
 
 A spoke has two sides:
 
 ```
-Spoke pool (USDT, the expected first spoke)
+Spoke pool (USDT example)
 ├── Spoke reserve      USDT held by the pool
 └── DLRS-side reserve  dollars, funded with hub assets that sit in hub reserves
 ```
@@ -40,23 +40,23 @@ inventory on both sides to serve both directions.
 Hub-to-hub swaps never touch a spoke.
 
 The hub asset that comes in on a hub → spoke swap lands in hub reserves, and the spoke's DLRS side is
-credited by the same amount. The two always move together, which is what keeps DLRS fully backed no
-matter what a spoke does.
+credited by the same amount. The two always move together, so total DLRS supply always equals hub
+reserves no matter what a spoke does.
 
 ## What a liquidity provider holds
 
 An LP can fund either side — the spoke asset itself, or a hub asset that credits the DLRS side. Either
-way they receive **receipt shares**: a pro-rata claim on the pool's total value, non-transferable and
+way they receive **receipt shares**: a pro-rata share of the pool's total value, non-transferable and
 tracked per pool rather than as a token.
 
 The first LP into an empty pool mints shares 1:1 with the value they add. After that, shares are
 pro-rata against the pool value before the deposit. All rounding is against the depositor, so nobody
-mints more claim than the value they bring.
+mints more shares than the value they bring.
 
 ### The position rotates
 
-This is the part worth understanding before supplying. Shares are a claim on the *sum* of both sides,
-not on the asset you deposited. As swaps flow, the mix underneath your shares changes:
+This is the part worth understanding before supplying. Shares represent a pro-rata share of the *sum* of
+both sides, not of the asset you deposited. As swaps flow, the mix underneath your shares changes:
 
 ```
 You fund the DLRS side with 100,000 USDC.
@@ -67,14 +67,14 @@ The market sells USDT into the pool (spoke → hub, 60,000):
 Pool: 160,000 USDT + 40,000 dollars = 200,000 value. You still hold 50%.
 ```
 
-Your claim is unchanged in dollar terms, but what backs it is now mostly USDT. That is the position: an
+Your share is unchanged in dollar terms, but the assets behind it are now mostly USDT. That is the position: an
 LP absorbs the asset the market is selling, at par, with no fee to compensate for it. **You are taking
 issuer exposure on that spoke's stablecoin.** If it depegs, the redemption value of your shares is what
 the reserves actually turn out to be worth, and a governor write-down (`syncReserves`) makes each share
 pay less — losses are shared pro-rata across the pool's LPs, and no further.
 
-The hub does not absorb any of this. DLRS holders are backed by hub reserves, which spoke activity never
-draws down beyond that spoke's own DLRS side.
+The hub does not absorb any of this. Spoke activity never draws down hub reserves beyond that spoke's own
+DLRS side, so hub depositors are insulated from a spoke's losses.
 
 ### Exiting
 

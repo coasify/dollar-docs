@@ -11,9 +11,11 @@ description: Understanding the DollarStore protocol
 
 Users can swap between listed stablecoins at exactly 1:1. No slippage. No fees.
 
-When the asset someone wants is available, the swap executes instantly. When it isn't, they get in
-line for it — and whatever *is* available fills right away. Getting in line is a choice, not a
-requirement: a swap can just as easily be told to revert instead.
+Swaps execute when reserves allow. When the asset someone wants is available, the swap settles against
+those reserves; when it isn't, they can get in line for it, and whatever *is* available fills against
+what they asked for. Queued liquidity is not a guarantee — a position fills as reserves arrive, in FIFO
+order, at 1:1 whenever the fill lands. Getting in line is a choice: a swap can just as easily be told to
+revert instead.
 
 ## How liquidity is organized
 

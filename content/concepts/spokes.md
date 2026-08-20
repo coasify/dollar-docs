@@ -141,5 +141,8 @@ the pool and unlists its asset; the poolId is retired but never reused, so ids n
 
 ## Spoke to spoke
 
-Not supported on-chain — a direct spoke-to-spoke swap reverts with `InvalidRoute`. Route it as two legs
-through a hub asset instead: spoke → hub, then hub → spoke.
+The protocol itself does not route spoke to spoke — a direct attempt reverts with `InvalidRoute`. It is
+composed as two legs through a hub asset: spoke → hub, then hub → spoke.
+
+A peripheral router contract is planned to perform both legs in a single call, built on top of the
+audited protocol rather than by changing it.

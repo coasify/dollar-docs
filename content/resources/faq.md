@@ -15,8 +15,9 @@ swap between listed stablecoins at exactly 1:1, with no slippage and no fees.
 
 ### What's the catch?
 
-Time. If liquidity is available, the protocol executes swaps instantly. If not, users wait in a queue
-until someone supplies what they need.
+Time. Swaps execute when reserves allow: if the asset is available the swap settles against reserves,
+and if not, users can wait in a queue until someone supplies what they need. Queued liquidity is not a
+guarantee — a position fills as reserves arrive.
 
 ### Why use this instead of Uniswap?
 
@@ -55,7 +56,7 @@ non-transferable receipt shares instead, tracked per pool.
 
 1. Approve the DollarStore proxy to spend the asset you are offering
 2. Call `swap(offerAsset, wantAsset, amount, minAmountOut, 0, deadline)`
-3. The protocol transfers the asset you want instantly for whatever it can fill, and queues the remainder
+3. The protocol transfers whatever reserves can cover, and queues the remainder
 
 Set `minAmountOut` equal to the normalized amount to require a full instant fill or revert. The `tip`
 parameter must currently be `0`.
@@ -67,15 +68,16 @@ Users have options:
 - Require a full instant fill by setting `minAmountOut` to the full amount, so the call reverts instead
 - Use `swapExactInput`, which is all-or-nothing and never queues (router/solver mode)
 
-### Can I guarantee part of my swap fills instantly, without queueing the rest?
+### Can I require that part of my swap settles now, without queueing the rest?
 
-Yes. `minAmountOut` is the floor on what must fill immediately — set it to the percentage you require
-and the call reverts if that much is not available. Setting it to the full amount gives you 100%
-instantly or nothing.
+Yes. `minAmountOut` is the floor on what must settle in that transaction — set it to the share you
+require and the call reverts if reserves do not cover it. Setting it to the full amount means the whole
+order settles or nothing does.
 
-Note that `swap` always queues whatever it could not fill. If you want a partial fill with the leftover
-staying in your wallet, submit only the amount you want filled. [Time vs
-Slippage](/concepts/time-tradeoff#guaranteeing-execution) walks through all three cases with code.
+Note that `swap` queues whatever it could not fill. If you want a partial fill with the leftover staying
+in your wallet, submit only the amount you want settled. [Time vs
+Slippage](/concepts/time-tradeoff#choosing-how-much-must-fill) walks through all three cases with
+code.
 
 ### How long will I wait in queue?
 

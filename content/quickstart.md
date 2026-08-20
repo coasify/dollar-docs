@@ -132,9 +132,9 @@ const { request } = await publicClient.simulateContract({
 const hash = await walletClient.writeContract(request)
 ```
 
-Change one argument to change the guarantee: `units` demands 100% instantly or reverts, `units * 80n /
-100n` demands 80% and queues the rest, `0n` takes whatever is available and queues the remainder. See
-[Guaranteeing execution](/concepts/time-tradeoff#guaranteeing-execution).
+Change one argument to change what you require: `units` demands the full amount or reverts, `units * 80n
+/ 100n` demands 80% and queues the rest, `0n` takes whatever reserves allow and queues the remainder. See
+[Choosing how much must fill](/concepts/time-tradeoff#choosing-how-much-must-fill).
 
 ## Discovering what is listed
 
@@ -148,8 +148,8 @@ uint16 pool = dollarStore.assetPoolId(token);     // which pool the asset belong
 ```
 
 Routes are hub↔hub, hub↔spoke and spoke↔hub. A direct spoke-to-spoke swap reverts with `InvalidRoute` —
-route it as two legs through a hub asset. There is no on-chain router that does this for you today, so
-that composition is yours to build.
+it is composed as two legs through a hub asset. A peripheral router contract is planned to do that in a
+single call on top of the protocol; until it ships, compose the two legs yourself.
 
 ## Before you ship
 

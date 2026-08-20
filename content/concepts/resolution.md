@@ -172,5 +172,5 @@ one difference: it never queues.
 7. Send wantAsset to msg.sender
 ```
 
-This guarantees either full execution or complete failure — no intermediate states. Note that the output
-goes to the caller, so a router receives the tokens and forwards them itself.
+The call either executes in full or reverts — no intermediate states. Note that the output goes to the
+caller, so a router receives the tokens and forwards them itself.

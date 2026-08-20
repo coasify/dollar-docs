@@ -11,13 +11,13 @@ price, variable time**.
 
 ## The traditional tradeoff
 
-AMMs and order books guarantee execution but not price:
+AMMs and order books resolve price differently, and charge for it:
 
 | Mechanism | Users get | Users give up |
 |-----------|---------|-------------|
-| AMM (Uniswap) | Instant execution | Price (slippage + fees) |
-| Order book | Price discovery | Instant execution (may not fill) |
-| DollarStore | Exact 1:1 price | Instant execution (may queue) |
+| AMM (Uniswap) | Execution on demand | Price (slippage + fees) |
+| Order book | Price discovery | Certainty of execution (may not fill) |
+| DollarStore | Exact 1:1 price | Certainty of execution (may queue) |
 
 ## There is no slippage
 
@@ -57,35 +57,39 @@ number where a normalized one belongs is the mistake to watch for.
 
 Convert with `assetScalingFactor(asset)`: `units = nativeAmount / scalingFactor`.
 
-## Guaranteeing execution
+## Choosing how much must fill
 
-You choose how much instant execution to demand. All three cases use the same parameter.
+You choose how much of the order must settle immediately for the transaction to be acceptable. All
+three cases use the same parameter.
 
-### 100% instantly, or nothing
+None of these makes execution certain — they decide what happens when reserves fall short. What the
+protocol fixes is the rate, not the timing.
 
-Set `minAmountOut` to the full normalized amount. Either the whole order fills on the spot, or the
-transaction reverts — and because nothing is left over, nothing is queued.
+### The whole order, or nothing
+
+Set `minAmountOut` to the full normalized amount. Either the whole order settles in that transaction or
+it reverts — and because nothing is left over, nothing is queued.
 
 ```solidity
 uint256 units = amount / dollarStore.assetScalingFactor(USDC); // 10_000_000_000
 
-// Fills 10,000 USDC → 10,000 USDS instantly, or reverts. Never queues.
+// Settles 10,000 USDC → 10,000 USDS in full, or reverts. Never queues.
 (uint256 filled, uint256 queued) = dollarStore.swap(
     USDC, USDS, amount, units, 0, block.timestamp + 300
 );
 // filled == units, queued == 0
 ```
 
-[`swapExactInput`](/capabilities/functions#swapexactinput) gives the same guarantee by construction and
-is the right endpoint for routers and solvers.
+[`swapExactInput`](/capabilities/functions#swapexactinput) behaves this way by construction and is the
+right endpoint for routers and solvers.
 
-### A minimum percentage instantly, remainder queued
+### A minimum share now, remainder queued
 
 Set `minAmountOut` to the fraction you require. Below it, the call reverts and nothing happens; at or
-above it, you are paid the instant portion and the shortfall is escrowed in the queue.
+above it, you are paid the settled portion and the shortfall is escrowed in the queue.
 
 ```solidity
-// "Fill at least 80% now, queue whatever is left"
+// "Settle at least 80% now, queue whatever is left"
 uint256 floor = (units * 80) / 100;
 
 (uint256 filled, uint256 queued) = dollarStore.swap(

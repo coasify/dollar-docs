@@ -33,7 +33,7 @@ unlisted individually — only a fully-drained spoke pool can be removed.
 | hub → hub | yes |
 | hub → spoke | yes |
 | spoke → hub | yes |
-| spoke → spoke | **no** — reverts `InvalidRoute`. Do it as two legs through a hub asset |
+| spoke → spoke | **not on the protocol** — reverts `InvalidRoute`. Composed as two legs through a hub asset, and a peripheral router is planned to do that in one call |
 
 ## Units
 
@@ -94,7 +94,7 @@ Output goes to `msg.sender` — a router receives the tokens itself and forwards
 
 ### For direct users
 
-Use `swap`, which fills what it can instantly and queues the rest:
+Use `swap`, which fills what reserves allow and queues the rest:
 
 ```solidity
 (uint256 filled, uint256 queued) = dollarStore.swap(
@@ -129,7 +129,7 @@ shares instead. Use `redeemSpoke` to exit proportionally across both sides of th
 3. **FIFO ordering**: each directed `(offerAsset → wantAsset)` queue is strictly first-in-first-out, and
    a swapper only reaches reserves once the queue ahead of it is cleared.
 4. **Exits stay open**: `withdraw`, `redeemSpoke` and `cancelQueue` are not blocked by pause.
-5. **All-or-nothing for routers**: `swapExactInput` fully executes or reverts—no intermediate states.
+5. **All-or-nothing for routers**: `swapExactInput` executes in full or reverts—no intermediate states.
 
 ## Next steps
 

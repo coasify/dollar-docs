@@ -25,16 +25,21 @@ slippage and fees. The DollarStore protocol executes at exactly 1:1.
 
 ### Which stablecoins are supported?
 
-Whichever ones governance has listed — there is no fixed pair. Examples in these docs use USDC and USDT
-because they are familiar, but the hub's contents are decided at listing time. Read the live set with
-`getPoolAssets(0)`.
+The hub launches with **USDC and USDS**. Other stablecoins join as spokes, and **USDT** is expected to
+be the first one listed.
+
+The set is governed and grows over time, so read it live with `getPoolAssets(0)` and `isAssetListed()`
+rather than hardcoding a pair.
 
 ### What are hub and spoke pools?
 
-The **hub** (poolId 0) holds the core stablecoins and is the pool DLRS is a claim on. Each additional
-stablecoin gets its own **spoke** pool (poolId >= 1), funded by liquidity providers and paired against a
-DLRS-side reserve backed by hub assets. Swaps route hub-to-hub, hub-to-spoke or spoke-to-hub; a direct
-spoke-to-spoke swap is rejected on-chain and has to be done as two legs through the hub.
+The **hub** (poolId 0) holds the core stablecoins — USDC and USDS at launch — and is the pool DLRS is a
+claim on. Each additional stablecoin gets its own **spoke** pool (poolId >= 1), funded by liquidity
+providers and paired against a DLRS-side reserve backed by hub assets. Swaps route hub-to-hub,
+hub-to-spoke or spoke-to-hub; a direct spoke-to-spoke swap is rejected on-chain and has to be done as
+two legs through the hub.
+
+So a USDC ↔ USDS swap is hub-to-hub, and a USDC ↔ USDT swap crosses into the USDT spoke.
 
 ### Is there a token?
 

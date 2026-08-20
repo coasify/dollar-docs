@@ -43,12 +43,17 @@ transaction to be acceptable?* Anything below the floor reverts. Anything above 
 goes to the queue.
 
 It is expressed in **normalized 6-decimal units**, not the output token's native decimals. Since the
-rate is 1:1, the normalized amount of your input is also the most you could ever get out:
+rate is 1:1, the normalized amount of your input is also the most you could ever get out.
+
+This matters on the hub itself, because its two assets do not share decimals:
 
 ```
-10,000 USDC   (6 decimals)  → 10_000_000_000 normalized units
-10,000 PYUSD  (18 decimals) → 10_000_000_000 normalized units
+10,000 USDC  (6 decimals)  = 10_000_000_000 native            → 10_000_000_000 units
+10,000 USDS  (18 decimals) = 10_000_000_000_000_000_000_000   → 10_000_000_000 units
 ```
+
+Same value, same normalized amount, native figures twelve orders of magnitude apart. Passing a native
+number where a normalized one belongs is the mistake to watch for.
 
 Convert with `assetScalingFactor(asset)`: `units = nativeAmount / scalingFactor`.
 
@@ -64,9 +69,9 @@ transaction reverts — and because nothing is left over, nothing is queued.
 ```solidity
 uint256 units = amount / dollarStore.assetScalingFactor(USDC); // 10_000_000_000
 
-// Fills 10,000 USDC → 10,000 USDT instantly, or reverts. Never queues.
+// Fills 10,000 USDC → 10,000 USDS instantly, or reverts. Never queues.
 (uint256 filled, uint256 queued) = dollarStore.swap(
-    USDC, USDT, amount, units, 0, block.timestamp + 300
+    USDC, USDS, amount, units, 0, block.timestamp + 300
 );
 // filled == units, queued == 0
 ```
@@ -84,7 +89,7 @@ above it, you are paid the instant portion and the shortfall is escrowed in the 
 uint256 floor = (units * 80) / 100;
 
 (uint256 filled, uint256 queued) = dollarStore.swap(
-    USDC, USDT, amount, floor, 0, block.timestamp + 300
+    USDC, USDS, amount, floor, 0, block.timestamp + 300
 );
 // e.g. filled == 8_500_000_000, queued == 1_500_000_000
 ```
@@ -105,12 +110,12 @@ was met. Check `getMinimumOrderSize(offerAsset, wantAsset)` when the remainder c
 submit the rest: quote first, then send only the amount you want filled, as an all-or-nothing order.
 
 ```solidity
-uint256 quote = dollarStore.getSwapQuote(USDC, USDT, amount); // native units of USDT
-uint256 fillable = quote / dollarStore.assetScalingFactor(USDT);
+uint256 quote = dollarStore.getSwapQuote(USDC, USDS, amount); // native units of USDS
+uint256 fillable = quote / dollarStore.assetScalingFactor(USDS);
 
 if (fillable > 0) {
     uint256 amountIn = fillable * dollarStore.assetScalingFactor(USDC);
-    dollarStore.swap(USDC, USDT, amountIn, fillable, 0, block.timestamp + 300);
+    dollarStore.swap(USDC, USDS, amountIn, fillable, 0, block.timestamp + 300);
 }
 // The USDC you did not submit never left your wallet
 ```
@@ -132,10 +137,10 @@ The [`swapExactInput`](/capabilities/functions#swapexactinput) function never qu
 fully or reverts.
 
 ```solidity
-// This either delivers the full amount of USDT, or reverts.
+// This either delivers the full amount of USDS, or reverts.
 // Never partial fills, never queues. Output goes to msg.sender.
 uint256 out = dollarStore.swapExactInput(
-    USDC, USDT, amountIn, minUnits, block.timestamp + 300
+    USDC, USDS, amountIn, minUnits, block.timestamp + 300
 );
 ```
 

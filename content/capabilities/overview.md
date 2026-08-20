@@ -48,21 +48,22 @@ Read `assetDecimals(asset)` and `assetScalingFactor(asset)` to convert.
 
 ## Supported stablecoins
 
-Whatever the governor has listed. There is no fixed set: hub assets are listed by governance, and each
-additional stablecoin is added as its own spoke. Discover it on-chain rather than hardcoding:
+The hub launches with **USDC and USDS**. Every other stablecoin joins as its own spoke — **USDS** is
+expected to be the first one.
+
+Examples throughout these docs follow that layout: a hub-to-hub swap is USDC ↔ USDS, and a hub-to-spoke
+swap is USDC ↔ USDS.
+
+The set is governed and grows over time, so resolve it at runtime rather than hardcoding:
 
 ```solidity
 uint256 pools = dollarStore.poolCount();
 address[] memory hubAssets = dollarStore.getPoolAssets(0);
 bool listed = dollarStore.isAssetListed(token);
-uint16 pool = dollarStore.assetPoolId(token);
+uint16 pool = dollarStore.assetPoolId(token);   // 0 = hub, >= 1 = that spoke
 ```
 
-:::warning USDC and USDT are placeholders
-Examples throughout these docs use `USDC` and `USDT` because they are familiar, **not** because they are
-the hub. Which assets the hub holds is decided at listing time and is not settled yet. Read the live set
-with `getPoolAssets(0)` and never assume a pair from an example.
-:::
+`assetPoolId` is what tells you which route you are on, and therefore which rules apply.
 
 The protocol is not deployed yet — see [Addresses](/resources/addresses).
 
@@ -75,13 +76,13 @@ Use `getSwapQuote` to check instant fillability, then `swapExactInput` to execut
 ```solidity
 // Instantly fillable amount, in native units of the output token (0 if the route is unsupported,
 // or if a same-direction queue already owns the liquidity)
-uint256 quote = dollarStore.getSwapQuote(USDC, USDT, amountIn);
+uint256 quote = dollarStore.getSwapQuote(USDC, USDS, amountIn);
 
 if (quote >= expectedOut) {
     // All-or-nothing: fills fully or reverts. Never queues. Pays msg.sender.
     uint256 out = dollarStore.swapExactInput(
         USDC,                  // offerAsset
-        USDT,                  // wantAsset
+        USDS,                  // wantAsset
         amountIn,              // amount, native units of USDC
         minUnits,              // minAmountOut, normalized 6dp floor
         block.timestamp + 300  // deadline
@@ -98,7 +99,7 @@ Use `swap`, which fills what it can instantly and queues the rest:
 ```solidity
 (uint256 filled, uint256 queued) = dollarStore.swap(
     USDC,                  // offerAsset
-    USDT,                  // wantAsset
+    USDS,                  // wantAsset
     amount,                // native units of USDC
     0,                     // minAmountOut: 0 = accept any instant fill and queue the remainder
     0,                     // tip: must be 0 (reserved)
@@ -114,7 +115,7 @@ Set `minAmountOut` to the full normalized amount to demand an instant fill or re
 
 ```solidity
 uint256 dlrs = dollarStore.deposit(0, USDC, amount, deadline);
-uint256 out  = dollarStore.withdraw(0, USDT, units, deadline);
+uint256 out  = dollarStore.withdraw(0, USDS, units, deadline);
 ```
 
 Depositing into a spoke — either its own asset or a hub asset funding its DLRS side — mints receipt

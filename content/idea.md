@@ -17,9 +17,10 @@ requirement: a swap can just as easily be told to revert instead.
 
 ## How liquidity is organized
 
-A **hub** pool holds the core stablecoins. Each additional stablecoin gets its own **spoke** pool,
-funded by liquidity providers and paired against the hub. Swaps route hub-to-hub, hub-to-spoke or
-spoke-to-hub, always at par. See [Supply](/concepts/supply) for how the two sides work.
+A **hub** pool holds the core stablecoins — USDC and USDS at launch. Each additional stablecoin gets its
+own **spoke** pool, funded by liquidity providers and paired against the hub; USDT is expected to be the
+first. Swaps route hub-to-hub, hub-to-spoke or spoke-to-hub, always at par. See
+[Supply](/concepts/supply) for how the two sides work.
 
 ## Why this matters
 

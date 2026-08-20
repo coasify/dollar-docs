@@ -12,7 +12,7 @@ processed in strict FIFO (First In, First Out) order.
 ## Directed queues
 
 There is not one queue per stablecoin — there is one queue per **direction**. A position in the
-`USDC → USDT` queue is someone offering USDC and waiting for USDT. The `USDT → USDC` queue is a
+`USDC → USDS` queue is someone offering USDC and waiting for USDS. The `USDS → USDC` queue is a
 different queue, holding the opposite side.
 
 That distinction is what makes peer matching work: a swap looks at the **exact-opposite** queue first
@@ -31,17 +31,17 @@ If you leave, you can immediately swap or withdraw against whatever is available
 line, you join at the tail.
 
 ```
-Queue USDC → USDT:
-  Position 1: Alice offers 500 USDC, wants USDT
-  Position 2: Bob offers 1,000 USDC, wants USDT
-  Position 3: Carol offers 600 USDC, wants USDT
+Queue USDC → USDS:
+  Position 1: Alice offers 500 USDC, wants USDS
+  Position 2: Bob offers 1,000 USDC, wants USDS
+  Position 3: Carol offers 600 USDC, wants USDS
 
-800 USDT becomes available:
-  → Alice receives 500 USDT (position closes, her 500 USDC enters reserves)
-  → Bob receives 300 USDT (still in line for 700 more)
+800 USDS becomes available:
+  → Alice receives 500 USDS (position closes, her 500 USDC enters reserves)
+  → Bob receives 300 USDS (still in line for 700 more)
   → Carol still waiting
 
-Queue USDC → USDT (after):
+Queue USDC → USDS (after):
   Position 1: Bob offers 700 USDC
   Position 2: Carol offers 600 USDC
 ```
@@ -84,21 +84,21 @@ Each directed queue is strict FIFO by arrival. There is no global clock **across
 queues that want the same asset.
 
 ```
-USDT → PYUSD    Alice, queued a week ago
-USDC → PYUSD    Bob, queued today
+USDS → USDT    Alice, queued a week ago
+USDC → USDT    Bob, queued today
 ```
 
-These are two separate queues. When PYUSD liquidity arrives, the auto-settlement walks the hub assets in
-the pool's own order — so if USDC comes before USDT in that order, Bob settles before Alice, despite
-arriving later.
+Both are waiting for USDT, but they are two separate queues — one per hub asset offered. When USDT
+liquidity arrives, the auto-settlement walks the hub assets in the pool's own order, so if USDC comes
+before USDS in that order, Bob settles before Alice despite arriving later.
 
 Alice is not stuck, though. She can drain her own queue directly at any time:
 
 ```solidity
-dollarStore.processQueue(USDT, PYUSD, maxPositions);
+dollarStore.processQueue(USDS, USDT, maxPositions);
 ```
 
-and a `USDT → PYUSD` swap from anyone else matches against her position too. Only the automatic
+and a `USDS → USDT` swap from anyone else matches against her position too. Only the automatic
 settlement follows pool order; every other path respects her queue's own FIFO.
 
 If ordering against other pairs matters to you, treat `processQueue` as the tool that puts you back in

@@ -26,11 +26,10 @@ interface below is what you will integrate against.
 5. **Sub-unit dust is never pulled.** A token with more than 6 decimals leaves the remainder in your
    wallet rather than rounding it away.
 
-:::warning Asset names in these examples are placeholders
-`USDC` and `USDT` appear throughout because they read well, not because they are the hub assets. The
-hub's contents are a governance decision and are not settled yet. Resolve the real set at runtime with
-`getPoolAssets(0)` and `isAssetListed(token)` — see [Discovering what is
-listed](#discovering-what-is-listed).
+:::info Assets in these examples
+The hub launches with **USDC and USDS**, and the examples below swap between them. Other stablecoins
+join as spokes — **USDS** is expected to be the first. The listed set is governed and grows, so resolve
+it at runtime instead of hardcoding: see [Discovering what is listed](#discovering-what-is-listed).
 :::
 
 ## Units
@@ -103,7 +102,7 @@ const amountIn = parseUnits('10000', 6) // 10,000 USDC
 // 1. How much fills right now?
 const quote = await publicClient.readContract({
   address: dollarStore, abi, functionName: 'getSwapQuote',
-  args: [USDC, USDT, amountIn],
+  args: [USDC, USDS, amountIn],
 })
 
 // 2. Normalized floor. Rate is 1:1, so input units == max output units.
@@ -123,7 +122,7 @@ await walletClient.writeContract({
 const { request } = await publicClient.simulateContract({
   address: dollarStore, abi, functionName: 'swap',
   args: [
-    USDC, USDT, amountIn,
+    USDC, USDS, amountIn,
     units,                            // minAmountOut: require a full instant fill
     0n,                               // tip: must be 0
     BigInt(Math.floor(Date.now() / 1000) + 300),

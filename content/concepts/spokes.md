@@ -18,16 +18,16 @@ own spoke pool, and each spoke is isolated — its own liquidity, its own provid
 A spoke has two sides:
 
 ```
-Spoke pool (RLUSD, for example)
-├── Spoke reserve      RLUSD held by the pool
+Spoke pool (USDT, the expected first spoke)
+├── Spoke reserve      USDT held by the pool
 └── DLRS-side reserve  dollars, funded with hub assets that sit in hub reserves
 ```
 
 Both sides are counted at par in normalized 6-decimal units, so the pool's value is simply
 `spokeReserve + dlrsReserve`.
 
-The two sides exist because a swap consumes one and feeds the other. Someone buying RLUSD takes it out
-of the spoke reserve and pays in hub dollars; someone selling RLUSD does the reverse. The pool needs
+The two sides exist because a swap consumes one and feeds the other. Someone buying USDT takes it out
+of the spoke reserve and pays in hub dollars; someone selling USDT does the reverse. The pool needs
 inventory on both sides to serve both directions.
 
 ## How swaps move a spoke
@@ -60,14 +60,14 @@ not on the asset you deposited. As swaps flow, the mix underneath your shares ch
 
 ```
 You fund the DLRS side with 100,000 USDC.
-Pool: 100,000 RLUSD + 100,000 dollars = 200,000 value. You hold 50% of it.
+Pool: 100,000 USDT + 100,000 dollars = 200,000 value. You hold 50% of it.
 
-The market sells RLUSD into the pool (spoke → hub, 60,000):
+The market sells USDT into the pool (spoke → hub, 60,000):
 
-Pool: 160,000 RLUSD + 40,000 dollars = 200,000 value. You still hold 50%.
+Pool: 160,000 USDT + 40,000 dollars = 200,000 value. You still hold 50%.
 ```
 
-Your claim is unchanged in dollar terms, but what backs it is now mostly RLUSD. That is the position: an
+Your claim is unchanged in dollar terms, but what backs it is now mostly USDT. That is the position: an
 LP absorbs the asset the market is selling, at par, with no fee to compensate for it. **You are taking
 issuer exposure on that spoke's stablecoin.** If it depegs, the redemption value of your shares is what
 the reserves actually turn out to be worth, and a governor write-down (`syncReserves`) makes each share
@@ -115,8 +115,8 @@ uncapped.
 
 ## Queues on a spoke
 
-Queues are per direction, so a spoke has its own: `USDC → RLUSD` is a different queue from
-`RLUSD → USDC`. They behave exactly as described in [The Queue](/concepts/queue).
+Queues are per direction, so a spoke has its own: `USDC → USDT` is a different queue from
+`USDT → USDC`. They behave exactly as described in [The Queue](/concepts/queue).
 
 One spoke-specific behavior: adding liquidity to a spoke settles the queues that the new liquidity can
 now fill, in FIFO order and [up to 8 positions each](/concepts/queue#how-much-settles-per-transaction).

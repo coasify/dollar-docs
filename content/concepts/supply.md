@@ -25,11 +25,11 @@ When a user supplies a hub stablecoin, the protocol records the contribution at 
 
 ```
 Supply 1,000 USDC → 1,000 DLRS minted
-Supply 500 USDT   → 500 DLRS minted
+Supply 500 USDS   → 500 DLRS minted
 ```
 
 DLRS is fungible regardless of which stablecoin was supplied. 1,000 DLRS from a USDC supply is identical
-to 1,000 DLRS from a USDT supply — both are a claim on the same hub basket.
+to 1,000 DLRS from a USDS supply — both are a claim on the same hub basket.
 
 ## Withdrawing from the hub
 
@@ -37,7 +37,7 @@ Burning DLRS takes out any hub stablecoin that has reserves, 1:1:
 
 ```
 Burn 1,000 DLRS → Receive 1,000 USDC (if reserves cover it)
-Burn 1,000 DLRS → Receive 1,000 USDT (if reserves cover it)
+Burn 1,000 DLRS → Receive 1,000 USDS (if reserves cover it)
 ```
 
 If the specific stablecoin isn't available, users can either:

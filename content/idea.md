@@ -26,9 +26,13 @@ first. Swaps route hub-to-hub, hub-to-spoke or spoke-to-hub, always at par. See
 
 ## Why this matters
 
-Stablecoins are supposed to be worth $1. Yet swapping between them on a DEX costs 0.01-0.3% in slippage and fees. On a $1M swap, that's up to $3,000 lost to solve a problem that doesn't exist—price discovery between identical values.
+Listed stablecoins are treated at par by the protocol. Conventional venues still make users manage
+route selection, price impact, fees and execution timing for assets that are intended to track the same
+unit of account.
 
-Large swaps on AMMs require splitting orders, monitoring execution, and managing slippage—complexity that adds time and risk. The DollarStore protocol is simpler: exact 1:1, single transaction, no slippage management.
+Large swaps on AMMs can require splitting orders, monitoring execution and managing slippage. The
+DollarStore protocol is simpler: a fixed 1:1 rate in normalized units, a single transaction, and an
+explicit choice between settling only what is available now or queueing the rest.
 
 ## Who this is for
 

@@ -10,7 +10,7 @@ A spoke is how a stablecoin joins the protocol without the hub taking on its ris
 
 ## What a spoke is
 
-**A par-value pair: one stablecoin against hub-side dollars.**
+**A par-value pair: one stablecoin against hub-side liquidity.**
 
 The hub holds the core stablecoins and is what DLRS represents. Every additional stablecoin gets its
 own spoke pool, and each spoke is isolated — its own liquidity, its own providers, its own risk.
@@ -20,22 +20,22 @@ A spoke has two sides:
 ```
 Spoke pool (USDT example)
 ├── Spoke reserve      USDT held by the pool
-└── DLRS-side reserve  dollars, funded with hub assets that sit in hub reserves
+└── DLRS-side reserve  hub-side liquidity funded with hub assets
 ```
 
 Both sides are counted at par in normalized 6-decimal units, so the pool's value is simply
 `spokeReserve + dlrsReserve`.
 
 The two sides exist because a swap consumes one and feeds the other. Someone buying USDT takes it out
-of the spoke reserve and pays in hub dollars; someone selling USDT does the reverse. The pool needs
+of the spoke reserve and pays in a hub asset; someone selling USDT does the reverse. The pool needs
 inventory on both sides to serve both directions.
 
 ## How swaps move a spoke
 
 | Swap | Spoke reserve | DLRS side | Meaning |
 |------|---------------|-----------|---------|
-| hub → spoke | down | up | The pool sells its spoke asset and takes in dollars — **risk-reducing** |
-| spoke → hub | up | down | The pool absorbs the spoke asset and pays out dollars — **risk-increasing** |
+| hub → spoke | down | up | The pool sells its spoke asset and takes in a hub asset — **risk-reducing** |
+| spoke → hub | up | down | The pool absorbs the spoke asset and pays out a hub asset — **risk-increasing** |
 
 Hub-to-hub swaps never touch a spoke.
 
@@ -60,15 +60,15 @@ both sides, not of the asset you deposited. As swaps flow, the mix underneath yo
 
 ```
 You fund the DLRS side with 100,000 USDC.
-Pool: 100,000 USDT + 100,000 dollars = 200,000 value. You hold 50% of it.
+Pool: 100,000 USDT + 100,000 hub-side units = 200,000 value. You hold 50% of it.
 
 The market sells USDT into the pool (spoke → hub, 60,000):
 
-Pool: 160,000 USDT + 40,000 dollars = 200,000 value. You still hold 50%.
+Pool: 160,000 USDT + 40,000 hub-side units = 200,000 value. You still hold 50%.
 ```
 
-Your share is unchanged in dollar terms, but the assets behind it are now mostly USDT. That is the position: an
-LP absorbs the asset the market is selling, at par, with no fee to compensate for it. **You are taking
+Your share is unchanged in stated pool value, but the assets behind it are now mostly USDT. That is the
+position: an LP absorbs the asset the market is selling, at par, with no fee to compensate for it. **You are taking
 issuer exposure on that spoke's stablecoin.** If it depegs, the redemption value of your shares is what
 the reserves actually turn out to be worth, and a governor write-down (`syncReserves`) makes each share
 pay less — losses are shared pro-rata across the pool's LPs, and no further.

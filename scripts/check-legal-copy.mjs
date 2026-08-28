@@ -42,13 +42,22 @@ const violations = [];
 for (const file of walk(CONTENT)) {
   const rel = relative(CONTENT, file);
   if (EXCLUDE.has(rel)) continue;
-  readFileSync(file, "utf8")
+  const text = readFileSync(file, "utf8");
+  text
     .split("\n")
     .forEach((line, i) => {
       for (const rule of RULES) {
         if (rule.re.test(line)) violations.push({ rel, line: i + 1, rule: rule.name, text: line.trim() });
       }
     });
+
+  const normalized = text.replace(/\s+/g, " ");
+  for (const rule of RULES) {
+    if (rule.re.test(normalized)) {
+      const match = normalized.match(rule.re)?.[0] ?? rule.name;
+      violations.push({ rel, line: 1, rule: `${rule.name} across line breaks`, text: match });
+    }
+  }
 }
 
 if (violations.length) {

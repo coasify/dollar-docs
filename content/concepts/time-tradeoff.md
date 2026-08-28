@@ -6,8 +6,8 @@ description: The fundamental tradeoff the protocol makes
 
 # Time vs Slippage
 
-Every exchange mechanism makes a tradeoff. The DollarStore protocol's tradeoff is explicit: **perfect
-price, variable time**.
+Every exchange mechanism makes a tradeoff. The DollarStore protocol's tradeoff is explicit: **fixed
+rate, variable time**.
 
 ## The traditional tradeoff
 
@@ -17,13 +17,13 @@ AMMs and order books resolve price differently, and charge for it:
 |-----------|---------|-------------|
 | AMM (Uniswap) | Execution on demand | Price (slippage + fees) |
 | Order book | Price discovery | Certainty of execution (may not fill) |
-| DollarStore | Exact 1:1 price | Certainty of execution (may queue) |
+| DollarStore | Fixed 1:1 rate | Certainty of execution (may queue) |
 
 ## There is no slippage
 
 Not "low slippage" — none. The rate is fixed at 1:1 in normalized units by the contract itself. There
-is no curve, no pool ratio, no price impact, and no fee. A $10 swap and a $10,000,000 swap execute at
-exactly the same rate, and the size of your order cannot move it.
+is no curve, no pool ratio, no price impact, and no fee. The size of an order does not move the
+protocol rate.
 
 The consequence is that **the classic reasons to set `minAmountOut` do not exist here**. Nothing can
 front-run you into a worse price, because there is no price to worsen. Splitting an order across

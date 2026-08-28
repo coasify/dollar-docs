@@ -64,6 +64,11 @@ const config: Config = {
         },
         {
           href: 'https://dollarstore.world',
+          label: 'Website',
+          position: 'right',
+        },
+        {
+          href: 'https://app.dollarstore.world',
           label: 'App',
           position: 'right',
         },

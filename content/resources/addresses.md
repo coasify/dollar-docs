@@ -6,37 +6,72 @@ description: Deployed contract addresses
 
 # Contract Addresses
 
-## Sepolia Testnet
+:::warning Not Yet Deployed
+The protocol is **not deployed to any network**. There are no live contract addresses to integrate
+against yet. Any DollarStore address circulating today is not ours — do not send funds to it.
+:::
 
-| Contract | Address |
-|----------|---------|
-| **DollarStore** | [`0x0D748365aA0A38EBaF6Df0C46f0Ebf2D79837c30`](https://sepolia.etherscan.io/address/0x0D748365aA0A38EBaF6Df0C46f0Ebf2D79837c30) |
-| **DLRS** | [`0xe78e2CfC18DaB60dbfEEBd83A7562D241Fc295F0`](https://sepolia.etherscan.io/address/0xe78e2CfC18DaB60dbfEEBd83A7562D241Fc295F0) |
-
-### Supported test stablecoins
-
-| Token | Address |
-|-------|---------|
-| **USDC** | [`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`](https://sepolia.etherscan.io/address/0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238) |
-| **USDT** | [`0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0`](https://sepolia.etherscan.io/address/0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0) |
+Addresses will be published here once deployment happens, and this page is the canonical source for
+them. Verify against it rather than against links from anywhere else.
 
 ## Ethereum Mainnet
 
-:::warning Not Yet Deployed
-DollarStore is not yet deployed to mainnet. This section will be updated when mainnet deployment occurs.
-:::
+| Contract | Address |
+|----------|---------|
+| DollarStore proxy | *pending* |
+| DollarStore implementation | *pending* |
+| DLRS | *pending* |
+
+## Testnet
+
+| Contract | Address |
+|----------|---------|
+| DollarStore proxy | *pending* |
+| DollarStore implementation | *pending* |
+| DLRS | *pending* |
+
+## Roles
+
+The protocol is governed by three separate on-chain roles, each held by a timelock or a Safe. Their
+addresses and delays will be published alongside the deployment. See [Security](/resources/security)
+for what each one can do.
+
+| Role | Held by | Address | Delay |
+|------|---------|---------|-------|
+| `upgrader` | TimelockController | *pending* | *pending* |
+| `governor` | TimelockController | *pending* | *pending* |
+| `guardian` | Safe (direct, no timelock) | *pending* | — |
+
+## Listed assets
+
+Which stablecoins are listed, and in which pool, is set by the governor after deployment. Discover it
+on-chain rather than hardcoding a list:
+
+```solidity
+uint256 pools = dollarStore.poolCount();      // index 0 is the hub
+address[] memory hubAssets = dollarStore.getPoolAssets(0);
+bool listed = dollarStore.isAssetListed(token);
+uint16 pool = dollarStore.assetPoolId(token);
+```
+
+## What to check when it lands
+
+- **Call the proxy, never the implementation.** The implementation address is published only so the
+  bytecode can be verified.
+- **Read `version()`** on the proxy and confirm it matches the surface you integrated against.
+- **Read the roles** — `upgrader()`, `governor()`, `guardian()` and their `pending*` counterparts —
+  and confirm they match the published addresses.
+
+```bash
+cast call $PROXY "version()(string)"   --rpc-url $RPC
+cast call $PROXY "upgrader()(address)" --rpc-url $RPC
+cast call $PROXY "governor()(address)" --rpc-url $RPC
+cast call $PROXY "guardian()(address)" --rpc-url $RPC
+```
 
 ## Interface
 
-The canonical interface is `IDollarStore.sol`:
-
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
-
-interface IDollarStore {
-    // See Capabilities > Functions for full interface
-}
-```
+The canonical interface is `IDollarStore.sol`. See [Functions](/capabilities/functions),
+[Events](/capabilities/events) and [Errors](/capabilities/errors) for the full surface.
 
 Source: [IDollarStore.sol on GitHub](https://github.com/wandering-soupsmith/dollar/blob/main/contracts/src/interfaces/IDollarStore.sol)

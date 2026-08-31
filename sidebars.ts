@@ -36,6 +36,7 @@ const sidebars: SidebarsConfig = {
         'resources/security',
         'resources/faq',
         'resources/terms',
+        'resources/protocol-terms',
       ],
     },
   ],

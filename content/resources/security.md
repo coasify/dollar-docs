@@ -60,7 +60,7 @@ and treat this table as intent until then.
 What makes the delays meaningful is what sits behind each timelock: the **proposer** is a Safe multisig
 (a timelock proposed by a single key is theater), **execution is open** so it does not depend on any one
 signer being around after the delay, and the guardian Safe holds **cancel** rights so a mistaken or
-malicious queued proposal can be aborted. No standing admin remains after deployment.
+malicious queued proposal can be aborted.
 
 ## During an incident
 

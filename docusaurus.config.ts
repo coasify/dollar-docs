@@ -44,6 +44,14 @@ const config: Config = {
   ],
 
   themeConfig: {
+    announcementBar: {
+      id: 'protocol-access-notice',
+      content:
+        'Protocol use is subject to the applicable protocol terms and is not available to U.S. Persons.',
+      backgroundColor: '#111827',
+      textColor: '#f9fafb',
+      isCloseable: false,
+    },
     colorMode: {
       defaultMode: 'dark',
       disableSwitch: true, // Dark only

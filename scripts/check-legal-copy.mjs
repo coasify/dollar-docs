@@ -8,7 +8,7 @@
  * reserves", "perfect price", "guaranteed", "certified", "legal tender". Bare "1:1", bare "backed" (used
  * technically, e.g. "priced by a fresh oracle"), and negated disclaimers ("not a guarantee") are fine.
  *
- * The legal Terms page is exempt: it must disclaim these things, which is protective, not a claim.
+ * Legal terms pages are exempt: they must disclaim these things, which is protective, not a claim.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const CONTENT = fileURLToPath(new URL("../content", import.meta.url));
 
-const EXCLUDE = new Set(["resources/terms.md"]);
+const EXCLUDE = new Set(["resources/terms.md", "resources/protocol-terms.md"]);
 
 const RULES = [
   { name: "legal-tender positioning", re: /legal[\s-]?tender/i },

@@ -124,12 +124,12 @@ still wait on reserves arriving, the same as at any other time.
 
 Two OpenZeppelin reports:
 
-- **Report #01** — the pre-v3 single-pool protocol. Findings fixed, including depeg protection and queue
-  blacklist resilience.
-- **Report #02** — the v3 upgradeable hub-and-spoke rebuild: two mediums, two lows, four notes. Fixed:
-  FIFO settlement before reserve fills (M-01), consistent `minAmountOut` units (L-01), and the notes.
-  Acknowledged by design and not changed: the peg check applies to inflows only (M-02), and the frozen
-  reserve redemption race (L-02).
+- **[Report #01](/audits/dollarstore-openzeppelin-audit-01.pdf)** — the pre-v3 single-pool protocol.
+  Findings fixed, including depeg protection and queue blacklist resilience.
+- **[Report #02](/audits/dollarstore-openzeppelin-audit-02.pdf)** — the v3 upgradeable hub-and-spoke
+  rebuild: two mediums, two lows, four notes. Fixed: FIFO settlement before reserve fills (M-01),
+  consistent `minAmountOut` units (L-01), and the notes. Acknowledged by design and not changed: the peg
+  check applies to inflows only (M-02), and the frozen reserve redemption race (L-02).
 
 Review coverage is not the same as safety, and the reviewed code has not run in production.
 

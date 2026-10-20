@@ -1,0 +1,24 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=EB+Garamond:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+:root {
+ --ifm-color-primary: #2d5a3d; --ifm-color-primary-dark: #264d34; --ifm-color-primary-darker: #21442e; --ifm-color-primary-darkest: #1a3828;
+ --ifm-color-primary-light: #366c49; --ifm-color-primary-lighter: #407e55; --ifm-color-primary-lightest: #4a7c5a;
+ --ifm-background-color: #fafaf8; --ifm-background-surface-color: #f0ede6;
+ --ifm-font-color-base: #0d1f15; --ifm-font-color-secondary: #42704f;
+ --ifm-font-family-base: 'EB Garamond', Georgia, serif; --ifm-heading-font-family: 'Cormorant Garamond', Georgia, serif;
+ --ifm-font-family-monospace: 'JetBrains Mono', monospace; --ifm-font-size-base: 18px; --ifm-line-height-base: 1.72;
+ --ifm-navbar-background-color: #fafaf8; --ifm-navbar-link-color: #2d5a3d; --ifm-navbar-shadow: none;
+ --ifm-menu-color: #1a3828; --ifm-menu-color-background-active: #eaf3ee; --ifm-menu-color-background-hover: #f0ede6;
+ --ifm-code-background: #f0ede6; --ifm-global-radius: 3px; --ifm-card-border-radius: 3px;
+ --ifm-toc-border-color: #c2d9cc; --ifm-hr-border-color: #c2d9cc;
+ --ifm-footer-background-color: #0d1f15; --ifm-footer-color: #fafaf8; --ifm-footer-link-color: #c2d9cc; --ifm-footer-title-color: #e8d4a0;
+ --ifm-global-shadow-lw: none; --ifm-global-shadow-md: none; --ifm-global-shadow-tl: none;
+}
+h1 { font-size: clamp(36px, 4vw, 48px); } h2 { font-size: 36px; } h1,h2,h3 { color: #2d5a3d; font-weight: 600; line-height: 1.15; }
+.navbar { border-bottom: 1px solid #c2d9cc; }
+.navbar__title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 26px; }
+.footer { --ifm-heading-color: #e8d4a0; }
+.pagination-nav__link, .card { border: 1px solid #c2d9cc; border-radius: 3px; box-shadow: none; }
+.menu__link { border-radius: 3px; }
+pre,code { font-size: 14px; } table { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid #2d5a3d; outline-offset: 3px; }
+@media(max-width: 600px) { h2 { font-size: 30px; } }

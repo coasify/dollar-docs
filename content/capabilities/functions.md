@@ -1,155 +1,182 @@
 ---
 sidebar_position: 2
 title: Functions
-description: Complete function reference for DollarStore
+description: Function reference for the DollarStore 0.11.0 interface
 ---
 
 # Functions
 
-All amounts marked *native* are in the token's own decimals. All amounts marked *units* are in
-normalized 6-decimal protocol units. See [Overview](/capabilities/overview#units).
+This page describes the upcoming **0.11.0** interface at
+[`ae25d5a`](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/src/interfaces/IDollarStore.sol).
+Confirm a matching release and proxy in [Addresses](/resources/addresses).
+
+*Native* amounts use the named token's own decimals. *Normalized units* use six decimals. A spoke
+receipt amount is a share count, which can differ from normalized dollar value. See
+[Overview](/capabilities/overview#units) for the units table.
 
 ## Core functions
 
 ### deposit
 
-Supply liquidity to a pool. On the hub this mints DLRS 1:1; on a spoke it mints non-transferable
-receipt shares.
+Supply liquidity, paid by the caller and owned by `receiver`.
 
 ```solidity
 function deposit(
     uint16 poolId,
     address asset,
     uint256 amount,
+    address receiver,
     uint256 deadline
-) external returns (uint256 receiptUnits)
+) external returns (uint256 amountIn, uint256 receiptAmount);
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `poolId` | uint16 | `0` for the hub, `>= 1` for a spoke |
-| `asset` | address | Listed asset to supply (native units) |
-| `amount` | uint256 | Amount to supply, native units |
-| `deadline` | uint256 | Unix timestamp after which the call reverts |
+| Parameter | Meaning |
+|-----------|---------|
+| `poolId` | `0` for the hub, or an active spoke ID |
+| `asset` | Listed input asset: a hub asset for the hub; the spoke asset or a hub asset for a spoke |
+| `amount` | Native input budget |
+| `receiver` | Owner of the resulting non-transferable receipts; cannot be zero or DollarStore |
+| `deadline` | Unix timestamp; the call reverts after it |
 
-**Returns:** DLRS minted (hub), or receipt shares credited (spoke), in normalized units
+**Returns:** `amountIn` is native input actually pulled. `receiptAmount` is DLRS minted with six
+decimals on the hub, or a receipt-share count on a spoke.
 
-**Effects:**
-- Checks the asset is on peg, its feed is fresh, and neither the asset nor the pool is deposit-paused
-- Pulls exactly `units * scalingFactor`; sub-unit dust stays with the caller
-- Enforces the pool's launch cap, if one is set
-- Hub: credits hub reserves and mints DLRS 1:1
-- Spoke, own asset: credits the spoke reserve and mints shares pro-rata
-- Spoke, hub asset: credits hub reserves and the spoke's DLRS-side reserve, and mints shares pro-rata
-- A spoke deposit also settles the queues the new liquidity can now fill, FIFO, up to 8 positions each
+- Rounds input down to a whole normalized unit; sub-unit input stays with the caller.
+- Checks asset inflow pause, relevant pool pauses, oracle freshness and peg, and the applicable cap.
+- Hub: credits hub reserves and mints DLRS at 1:1 in normalized units.
+- Spoke asset: credits the spoke reserve and mints shares proportionally to value added.
+- Hub asset into a spoke: credits hub reserves and the spoke's DLRS-side reserve, then mints shares.
+  It does not mint wallet DLRS and counts against the spoke cap, not the hub cap.
+- A spoke deposit tries the queues that its new liquidity can fill, visiting up to eight older
+  same-direction positions per hub-asset line. Unhealthy offered assets are skipped for settlement.
+  A hub deposit does not automatically settle queues.
 
-**Reverts if:** deadline passed, amount rounds to zero units, asset not listed, asset does not belong to
-`poolId`, the pool is paused or winding down, the asset is deposit-paused or off peg, the launch cap
-would be exceeded, or the token charges a transfer fee
+Anyone can deposit for a receiver without its permission; no funds are taken from that receiver.
+A receipt balance therefore need not equal that address's own deposits. The receiver must be able to
+call `withdraw`, because receipts cannot be transferred to another owner.
 
----
+Relevant failures include `ZeroAmount`, `InvalidRecipient`, `AssetNotListed`, `WrongPool`, pause/oracle
+errors, `SpokeWindingDown`, `LaunchCapExceeded`, `DepositTooSmall`, `PoolFullyImpaired` and unsupported
+input-token transfers. See [Errors](/capabilities/errors).
 
 ### withdraw
 
-Take liquidity out of a pool. Exit path — **not** blocked by pause.
+Burn an exact receipt amount for a proportional basket. It pays the caller and is not blocked by
+protocol, pool or deposit pause, or by the spoke's `minDlrsReserve` floor.
 
 ```solidity
 function withdraw(
     uint16 poolId,
-    address asset,
-    uint256 units,
+    uint256 receiptAmount,
+    uint256[] calldata minAmountsOut,
     uint256 deadline
-) external returns (uint256 nativeAmountOut)
+) external returns (address[] memory assets, uint256[] memory amounts);
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `poolId` | uint16 | `0` for the hub, `>= 1` for a spoke |
-| `asset` | address | Asset to receive |
-| `units` | uint256 | Hub: DLRS to burn. Spoke: receipt shares to burn |
-| `deadline` | uint256 | Unix timestamp after which the call reverts |
+| Parameter | Meaning |
+|-----------|---------|
+| `poolId` | `0` for the hub, or the spoke being exited |
+| `receiptAmount` | DLRS or spoke shares burned from the caller |
+| `minAmountsOut` | Empty to accept the calculated payout; otherwise one native minimum per returned asset |
+| `deadline` | Unix timestamp; the call reverts after it |
 
-**Returns:** Native amount sent to the caller
+**Returns:** all assets the exit can pay, and each native amount, including zero-amount entries.
 
-**Effects:**
-- Hub: burns `units` DLRS and sends the chosen hub asset 1:1
-- Spoke, paid in the spoke asset: burns shares and pays the pro-rata value from that spoke's reserve
-- Spoke, paid in a hub asset: burns shares and pays out of hub reserves, consuming the spoke's DLRS-side
-  reserve. The pool's `minDlrsReserve` floor does **not** gate LP exits
+- Hub: burns DLRS and divides that normalized amount across hub assets by current reserve weights.
+- Spoke: burns shares for a proportional amount of current pool value, split between the spoke asset
+  and its hub allocation. The hub portion is distributed across hub assets by reserve weights.
+- Asset order is the spoke asset first for a spoke exit, followed by **every hub asset in listing
+  order**. A hub exit contains only the hub assets. `getPoolAssets(spokeId)` is not this full exit list.
+- Build `minAmountsOut` from `previewWithdraw`'s order. Any nonempty array of a different length
+  reverts `MinAmountsLength`; a payout below its native minimum reverts `WithdrawMinNotMet`.
+  A newly listed hub asset adds a slot, so an older minimums array fails on length.
+- Pool assets whose payout is zero are checked with a zero-value transfer to the caller unless
+  governance set `isProbeExempt(asset)`. A failed probe reverts `ExitBlockedByIssuer`. Positive payouts
+  use real token transfers, which can also fail under issuer restrictions.
 
-**Reverts if:** deadline passed, `units` is 0, asset not listed or in the wrong pool, reserves cannot
-cover the amount, or the caller holds too few DLRS / receipt shares
+The caller cannot choose an output asset. To end in one token, withdraw and then swap under the swap's
+liquidity and queue rules. There is no separate `redeemSpoke` endpoint. This is not ERC-4626.
 
----
+`previewWithdraw` and `withdraw` use the same rounding calculation. A spoke exit floors total value
+once, then splits the two sides; hub amounts are floored by reserve weight and leftover units are
+assigned in listing order where reserve remains. The last shares can take both active spoke reserves
+to zero when backing and transfers permit the exit.
 
-### redeemSpoke
+Relevant failures include expired deadline, insufficient DLRS/shares, zero or sub-unit payout,
+insufficient total hub reserves, minimum-array errors and issuer transfer restrictions. A pause does
+not promise that an issuer-controlled token will deliver.
 
-Proportional spoke exit: pays the pro-rata slice of **both** sides of the pool in one call, so a
-departing LP is not left with dust stranded on one side. Exit path — not blocked by pause, not gated by
-`minDlrsReserve`.
+### previewWithdraw
+
+Calculate the basket that `withdraw` would pay at the current state:
 
 ```solidity
-function redeemSpoke(
-    uint16 poolId,
-    uint256 shares,
-    uint256 deadline
-) external returns (uint256 spokeUnits, uint256 dlrsUnits)
+function previewWithdraw(uint16 poolId, uint256 receiptAmount)
+    external view returns (address[] memory assets, uint256[] memory amounts);
 ```
 
-**Returns:** value paid from the spoke reserve, and value paid from the DLRS side across hub assets,
-both in normalized units
+It uses the same ordering, native amounts and rounding as withdrawal. Anyone can preview an amount;
+the caller's receipt balance is not checked. A preview above all outstanding DLRS or spoke shares
+reverts `InsufficientReceiptShares`, and zero/sub-unit values or insufficient backing can also revert.
 
-Burning the last shares drains both reserves to exactly zero, which is what allows a fully-exited spoke
-to be removed by the governor.
-
----
+A preview does not run token transfers or issuer probes. Simulate the actual exit to test those checks,
+and apply minimums to protect the transaction against changes before execution.
 
 ## Swap functions
 
-### swap
+### swapOrQueue
 
-Swap one asset for another 1:1. Fills from the exact-opposite queue first, then protocol reserves, then
-queues whatever is left.
+Swap at 1:1 in normalized units, delivering what can fill now and queueing the remainder under the caller.
 
 ```solidity
-function swap(
+function swapOrQueue(
     address offerAsset,
     address wantAsset,
     uint256 amount,
     uint256 minAmountOut,
-    uint256 tip,
     uint256 deadline
-) external returns (uint256 amountFilled, uint256 amountQueued)
+) external returns (
+    uint256 amountIn,
+    uint256 amountOut,
+    uint256 amountInQueued,
+    uint256 positionId
+);
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `offerAsset` | address | Input asset |
-| `wantAsset` | address | Output asset |
-| `amount` | uint256 | Amount to swap, native units of `offerAsset` |
-| `minAmountOut` | uint256 | Minimum that must be filled **instantly**, normalized 6dp. Set equal to the normalized `amount` to require a full instant fill |
-| `tip` | uint256 | Reserved for priority queues. **Must be 0** |
-| `deadline` | uint256 | Unix timestamp after which the call reverts |
+| Parameter | Meaning |
+|-----------|---------|
+| `offerAsset` / `wantAsset` | Listed input and output assets; pair must be hub↔hub or hub↔spoke |
+| `amount` | Native offered-token budget |
+| `minAmountOut` | Minimum native wanted-token amount delivered immediately |
+| `deadline` | Unix timestamp; the call reverts after it |
 
-**Returns:**
-- `amountFilled`: filled instantly, normalized units
-- `amountQueued`: escrowed into the queue, normalized units
+**Returns:** `amountIn` is native input actually pulled; `amountOut` is native output paid now;
+`amountInQueued` is native offered token escrowed, already included in `amountIn`; `positionId` is the
+new position ID, or zero if nothing queued. Later queue views/events use normalized amounts instead.
+
+With scaling factors `So` and `Sw`, full instant output is `(amount / So) * Sw`. Use that native value
+as the minimum to demand a full immediate fill. Zero permits any immediate amount and queues the rest,
+subject to minimum size and queue capacity. There is no tip parameter.
 
 **Fill order:**
-1. The exact-opposite `(wantAsset → offerAsset)` queue — a peer match that touches no reserves
-2. Protocol reserves, but only after settling the same-direction queue ahead of the caller, and only if
-   that queue is then empty
-3. The remainder is escrowed as a new position at the tail of the `(offerAsset → wantAsset)` queue
 
-**Reverts if:** deadline passed, `tip != 0`, same asset, unsupported route, an asset is not listed, the
-offer asset is deposit-paused or off peg, a spoke involved is paused (or winding down, for spoke → hub),
-`amountFilled < minAmountOut`, the queue is full, or the queued remainder is below the minimum order size
+1. Match the exact-opposite `(wantAsset → offerAsset)` queue without touching reserves.
+2. Visit up to eight older same-direction positions using reserves. Only if that line is then empty
+   can the caller's remainder use available route reserves.
+3. Escrow the remaining offered token in a new position at the directed queue's tail.
 
----
+A queue owner's failed payment parks that position rather than converting it into receipts. The
+caller owns any new position, receives later fills and is the only address that can cancel it.
+There is no separate recipient; routers should normally use a never-queue endpoint.
+
+The operation checks global pause, route validity, offered-asset inflow conditions and spoke pause/status.
+It reverts if immediate native output is below the minimum, the queue is full, or the remainder is
+below the minimum for a nonempty queue. Input is rounded down; sub-unit dust is not pulled.
 
 ### swapExactInput
 
-Router/solver endpoint. Never queues—either fully executes or reverts.
+All-or-nothing execution for wallets, routers and solvers. It fills the rounded input completely or
+reverts; it never creates a queued position.
 
 ```solidity
 function swapExactInput(
@@ -157,125 +184,152 @@ function swapExactInput(
     address wantAsset,
     uint256 amount,
     uint256 minAmountOut,
+    address recipient,
     uint256 deadline
-) external returns (uint256 amountOut)
+) external returns (uint256 amountIn, uint256 amountOut);
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `offerAsset` | address | Input asset |
-| `wantAsset` | address | Output asset |
-| `amount` | uint256 | Exact input amount, native units |
-| `minAmountOut` | uint256 | Floor on the filled amount, **normalized 6dp** — same convention as `swap` |
-| `deadline` | uint256 | Unix timestamp after which the call reverts |
+Input comes from the caller; native output goes directly to `recipient`, which cannot be zero or
+DollarStore. `amount` is a native input budget and `minAmountOut` is native wanted-token output.
+Returns report native input actually pulled and output delivered. Full output is `(amount / So) * Sw`;
+sub-unit input remains with the caller.
 
-**Returns:** output amount in native units of `wantAsset`
+It follows the same peer matching, inline FIFO settlement, route and inflow checks as `swapOrQueue`.
+A partial fill reverts `InsufficientLiquidity`; a native output minimum above what was delivered
+reverts `MinAmountNotMet`. All intermediate settlement and parking effects roll back on any revert.
 
-Output is sent to `msg.sender`; there is no `recipient` parameter. A router receives the tokens and
-forwards them itself.
+### swapSpokeToSpoke
 
-**Reverts if:** deadline passed, the full amount cannot be filled instantly (`InsufficientLiquidity`),
-`filled < minAmountOut`, or any of the route/peg/pause validations fail
+All-or-nothing spoke-to-spoke execution through the caller's ordered hub-asset list:
 
----
+```solidity
+function swapSpokeToSpoke(
+    address offerAsset,
+    address wantAsset,
+    address[] calldata via,
+    uint256 amount,
+    address recipient,
+    uint256 deadline
+) external returns (uint256 amountIn, uint256 amountOut);
+```
+
+Both endpoints must be distinct listed spoke assets, and `via` must be nonempty with hub assets.
+For each entry, a spoke→hub leg and hub→spoke leg carry what both can fill; unfilled input moves to the
+next entry. It never queues. If the list cannot carry all rounded input, the whole call reverts
+`InsufficientLiquidity`. Input is native offered token, output native wanted token, and `recipient`
+receives it directly. There is no minimum parameter: the full output `(amount / So) * Sw` is required.
+
+The list is used greedily in order, and entries share reserve limits. Another order or a shorter list
+can fill when one list does not. Each entry is sized assuming payments to older queued owners succeed;
+parking such positions can change the actual outcome. An entry sized at zero skips payouts, and a
+later entry, including the same hub asset again, is sized again.
+
+The offered spoke asset must pass inflow checks. A hub `via` failing its inflow check is skipped; the
+wanted asset is not price-checked. Spoke route pauses and winding-down rules still apply. Final output
+and older queue payments must be deliverable; a revert rolls back the entire transaction.
+
+For a single hub asset, estimate native output with:
+
+```solidity
+uint256 hubOutput = dollarStore.getSwapQuote(offerAsset, hubAsset, amount);
+uint256 output = dollarStore.getSwapQuote(hubAsset, wantAsset, hubOutput);
+```
+
+Equality to full native output indicates enough estimated liquidity assuming payments succeed.
+Simulate the actual call with caller and recipient, especially for a list. A direct spoke-pair
+`getSwapQuote` returns zero. More routing details are in
+[the protocol reference](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/docs/PROTOCOL.md).
 
 ## Queue functions
 
 ### cancelQueue
 
-Cancel a queue position and get the escrowed offer asset back. Exit path — not blocked by pause.
+Return the position's original offered-token escrow to its owner. The owner alone can call, including
+while paused or after the original spoke is removed.
 
 ```solidity
-function cancelQueue(uint256 positionId) external
+function cancelQueue(uint256 positionId) external;
 ```
 
-**Reverts if:** the position does not exist, or the caller does not own it
+A successful transfer removes the position and emits `QueueCancelled`. If an active position's refund
+fails, the transaction parks it and emits `QueueParked`; its offered-token escrow remains. If a parked
+position's refund fails again, the call reverts `EscrowTransferFailed`. No receipt is minted in place
+of escrow. Retry when the original token can be delivered.
 
-If the token transfer back to the owner fails (for example a blacklist), the escrow is converted into
-the canonical receipt instead of reverting — DLRS on the hub, receipt shares on a spoke — and
-`QueuePositionRefunded` is emitted.
-
----
+Check events or `isQueuePositionParked`: a successful first cancellation transaction can mean parking,
+not a refund. Missing IDs revert `QueuePositionNotFound`; another caller reverts `NotPositionOwner`.
 
 ### processQueue
 
-Permissionless. Settle a directed queue from available reserves in FIFO order, bounded by an explicit
-position budget.
+Permissionless reserve settlement of a directed queue in FIFO order, with an explicit visit budget:
 
 ```solidity
 function processQueue(
     address offerAsset,
     address wantAsset,
     uint256 maxPositions
-) external returns (uint256 positionsProcessed, uint256 amountFilled)
+) external returns (uint256 positionsProcessed, uint256 amountFilled);
 ```
 
-**Returns:** positions filled or partially filled, and the total filled in normalized units
-
-Anyone can call this to push a queue along—useful for keepers, and for clearing a queue that is blocking
-instant liquidity on its route.
-
----
+`positionsProcessed` counts full fills, partial fills and positions parked after a failed payout.
+Parked visits count against `maxPositions`; `amountFilled` is the total actually filled in normalized
+six-decimal units. Route, global pause and offered-asset inflow checks apply. There is no deadline.
 
 ## View functions
 
 ### getSwapQuote
 
-Instantly fillable amount for a swap. Used by aggregators to check fillability.
+Estimate immediate native output for `swapOrQueue` or `swapExactInput`:
 
 ```solidity
-function getSwapQuote(
-    address offerAsset,
-    address wantAsset,
-    uint256 amount
-) external view returns (uint256)
+function getSwapQuote(address offerAsset, address wantAsset, uint256 amount)
+    external view returns (uint256);
 ```
 
-**Returns:** the fillable amount in **native units of `wantAsset`**, capped at `amount`. Returns `0` if
-the route is unsupported (same asset, unlisted, spoke → spoke, paused or winding-down spoke), or if a
-same-direction queue already exists — under FIFO that queue owns the instant liquidity.
+The input is native offered token; the result is native wanted token, capped at
+`(amount / So) * Sw`. It counts opposite-queue escrow, then reserves left if up to eight earlier
+same-direction positions can be cleared. An existing same-direction queue does not automatically mean
+a zero quote.
 
-Instant liquidity is the opposite queue's escrow plus the route-aware protocol reserves. It can be less
-than `amount`, so compare against what you need rather than testing for non-zero.
+The result is zero when the route or its pause/inflow checks would fail: global pause, same/unlisted
+assets, direct spoke-to-spoke, relevant pool pause, offered-asset deposit pause or unhealthy oracle/peg.
+Winding-down blocks spoke→hub, while hub→spoke remains supported unless otherwise paused.
 
----
+The quote has no caller or recipient and checks no balance, approval or transfer permissions. It
+assumes each payment succeeds; a queued owner who cannot be paid can make actual execution fill more
+or less. Simulate the intended transaction with its caller and recipient for execution checks, and
+allow for state changes before mining.
 
 ### getReserves
 
-All assets in a pool and their reserves, in normalized units.
+Pool assets and active reserves, in normalized units. A spoke's internal DLRS-side reserve is separate.
 
 ```solidity
 function getReserves(uint16 poolId) external view returns (
     address[] memory assets,
     uint256[] memory amounts
-)
+);
 ```
-
----
 
 ### getReserve
 
-Reserve of a single asset in a pool, normalized units.
+Active reserve of one asset, in normalized units; queue escrow is excluded.
 
 ```solidity
-function getReserve(uint16 poolId, address asset) external view returns (uint256)
+function getReserve(uint16 poolId, address asset) external view returns (uint256);
 ```
-
----
 
 ### getQueueDepth
 
-Total escrowed depth of a directed queue, normalized units.
-
 ```solidity
-function getQueueDepth(address offerAsset, address wantAsset) external view returns (uint256)
+function getQueueDepth(address offerAsset, address wantAsset) external view returns (uint256);
 ```
 
----
+Returns normalized escrow depth on the pair's current pool line. It returns zero if either asset is
+not listed, so removed-pool lines are not reported. `getQueueDepth(asset, address(0))` instead reports
+that offered asset's parked escrow, whether listed or not.
 
 ### getQueuePosition
-
-Details of a queue position. Returns zeros if it does not exist.
 
 ```solidity
 function getQueuePosition(uint256 positionId) external view returns (
@@ -283,83 +337,123 @@ function getQueuePosition(uint256 positionId) external view returns (
     address offerAsset,
     address wantAsset,
     uint256 amount,
-    uint256 timestamp
-)
+    uint256 timestamp,
+    uint16 poolId
+);
 ```
 
----
+Returns zeros for a missing ID. `amount` is remaining normalized escrow, not native input.
+`poolId` is the original spoke pool for hub↔spoke or zero for hub↔hub; it remains unchanged on parking
+or pool removal. Relisting an asset does not move its old positions into the new pool's queues.
 
 ### getUserQueuePositions
 
-All position ids owned by a user.
-
 ```solidity
-function getUserQueuePositions(address user) external view returns (uint256[] memory)
+function getUserQueuePositions(address user) external view returns (uint256[] memory);
 ```
 
----
+All position IDs owned by the user, including parked positions.
+
+### isQueuePositionParked
+
+```solidity
+function isQueuePositionParked(uint256 positionId) external view returns (bool);
+```
+
+Whether the position was lifted out of its directed queue following a failed token payment.
+It no longer fills automatically; the owner exits by cancelling when its original token can be paid.
 
 ### getMinimumOrderSize
 
-Current minimum size to queue into a directed queue, normalized units. Starts at 500 and grows 10x every
-25 positions in that queue.
-
 ```solidity
-function getMinimumOrderSize(address offerAsset, address wantAsset) external view returns (uint256)
+function getMinimumOrderSize(address offerAsset, address wantAsset) external view returns (uint256);
 ```
 
-The minimum is waived for the first position of an empty queue.
-
----
+Current normalized minimum for a queued remainder on the pair's current line. It starts at
+`500e6` (500 whole token units) and grows tenfold every 25 active positions. The queue holds at most
+150 positions; the minimum is waived only when opening an empty line. Multiply by the offered asset's
+scaling factor for a native minimum. An unlisted pair or the parked line returns the base minimum;
+the parked line accepts no new orders.
 
 ### Registry views
 
 | Function | Returns |
 |----------|---------|
-| `poolCount()` | Number of pools; index 0 is the hub |
-| `getPoolAssets(uint16 poolId)` | Assets belonging to a pool |
+| `poolCount()` | Number of allocated pool IDs, including retired pools; ID zero is the hub |
+| `getPoolAssets(uint16 poolId)` | Assets registered to the pool; not a spoke's full exit basket |
 | `poolKind(uint16 poolId)` | `0` = Hub, `1` = Spoke |
 | `getPoolStatus(uint16 poolId)` | `0` = Active, `1` = WindingDown, `2` = Killed |
-| `isAssetListed(address asset)` | Whether the asset is supported |
-| `assetDecimals(address asset)` | Decimals frozen at listing |
+| `isAssetListed(address asset)` | Whether the asset is currently listed |
+| `assetDecimals(address asset)` | Frozen decimals, retained after pool removal; zero if never listed |
 | `assetScalingFactor(address asset)` | `10**(decimals - 6)` |
-| `assetPoolId(address asset)` | The pool the asset belongs to |
-| `assetPriceFeed(address asset)` | Chainlink feed for the asset |
-| `dlrs()` | DLRS token address |
-| `version()` | Semantic version of the implementation |
+| `assetPoolId(address asset)` | Canonical pool ID; check listing status before routing |
+| `assetPriceFeed(address asset)` | Configured Chainlink feed |
+| `dlrs()` | DLRS receipt-token address |
+| `version()` | Implementation semantic version |
 
 ### Spoke views
 
 | Function | Returns |
 |----------|---------|
-| `getDlrsReserve(uint16 poolId)` | The spoke's DLRS-side reserve, normalized |
-| `getMinDlrsReserve(uint16 poolId)` | Protected minimum on that reserve |
-| `getReceiptShares(uint16 poolId, address owner)` | An LP's receipt-share balance |
-| `getReceiptTotalShares(uint16 poolId)` | Total outstanding shares in the pool |
+| `getDlrsReserve(uint16 poolId)` | Normalized DLRS-side reserve; zero for the hub |
+| `getMinDlrsReserve(uint16 poolId)` | Normalized reserve floor for spoke→hub swaps, not LP exits |
+| `getReceiptShares(uint16 poolId, address owner)` | Owner's non-transferable share count |
+| `getReceiptTotalShares(uint16 poolId)` | Total outstanding share count |
 
 ### Risk views
 
 | Function | Returns |
 |----------|---------|
-| `isDepositPaused(address asset)` | Whether inflows of the asset are paused |
-| `isPoolPaused(uint16 poolId)` | Whether the pool is paused |
-| `paused()` | Whether the protocol is globally paused |
+| `isDepositPaused(address asset)` | Whether inflows of this asset are paused |
+| `isPoolPaused(uint16 poolId)` | Whether this pool is paused |
+| `paused()` | Global pause state |
+| `isProbeExempt(address asset)` | Whether zero-payout exit probes are disabled for this asset |
 | `pegTolerance()` | Peg tolerance in basis points |
-| `maxStaleness()` | Max oracle staleness in seconds |
-| `getLaunchCap(uint16 poolId)` | Pool exposure cap; `0` means uncapped |
-
----
+| `maxStaleness()` | Maximum oracle age in seconds |
+| `getLaunchCap(uint16 poolId)` | Normalized exposure cap; zero is uncapped |
 
 ## Governance functions
 
-Not callable by integrators, but worth monitoring. See [Security](/resources/security) for the trust
-model behind each role.
+The role controls below are separate permissions; a deployment can assign several to one address.
+See [Security](/resources/security) and verify deployed holders and timelock settings.
 
 | Role | Functions |
 |------|-----------|
-| `upgrader` (timelock) | `upgradeToAndCall`, `transferUpgrader` / `acceptUpgrader` |
-| `governor` (timelock) | `addHubAsset`, `createSpoke`, `setMinDlrsReserve`, `windDownSpoke`, `removePool`, `setLaunchCap`, `setPriceFeed`, `setPegTolerance`, `setMaxStaleness`, `syncReserves`, `rescueTokens`, `transferGovernor` / `acceptGovernor`, `transferGuardian` |
-| `guardian` (Safe, instant) | `pause` / `unpause`, `pauseDeposits` / `unpauseDeposits`, `pausePool` / `unpausePool`, `lowerLaunchCap`, `adminCancelQueue`, `haircutEscrow`, `acceptGuardian` |
+| Upgrader | `upgradeToAndCall(address,bytes)`, `transferUpgrader(address)`, `acceptUpgrader()` |
+| Governor | `addHubAsset(address,address)`, `createSpoke(address,address,uint256,uint256)`, `setMinDlrsReserve(uint16,uint256)`, `windDownSpoke(uint16)`, `removePool(uint16)`, `setLaunchCap(uint16,uint256)`, `setPriceFeed(address,address)`, `setProbeExempt(address,bool)`, `setPegTolerance(uint256)`, `setMaxStaleness(uint256)`, `syncReserves(uint16,address)`, `rescueTokens(address,address)`, `transferGovernor(address)`, `acceptGovernor()`, `transferGuardian(address)`, `setUnpauser(address)` |
+| Guardian | `lowerLaunchCap(uint16,uint256)`, `haircutEscrow(address,uint256)`, `acceptGuardian()` |
+| Pauser | `pause()`, `pauseDeposits(address)`, `pausePool(uint16)` |
+| Unpauser | `unpause()`, `unpauseDeposits(address)`, `unpausePool(uint16)`, `setPauser(address,bool)` |
 
-Read the current holders with `upgrader()`, `governor()`, `guardian()` and their `pending*`
-counterparts—every role transfer is two-step.
+The `accept*` functions require the nominated pending holder rather than the current holder.
+Read `governor()`, `guardian()`, `upgrader()`, their `pending*` getters, `unpauser()` and
+`isPauser(address)`. Governor, guardian and upgrader transfers use nomination and acceptance;
+`setUnpauser` directly replaces that role and `setPauser` directly changes permission.
+
+### Pool configuration and recovery
+
+```solidity
+function createSpoke(
+    address spokeAsset,
+    address priceFeed,
+    uint256 minDlrsReserve,
+    uint256 launchCap
+) external returns (uint16 poolId);
+```
+
+The governor supplies the normalized reserve floor and launch cap in the creation call; zero cap is
+uncapped. Caps are checked on deposits: the hub cap limits DLRS supply, and a spoke cap limits its
+spoke reserve plus DLRS-side reserve. `lowerLaunchCap` can only tighten a cap.
+
+`windDownSpoke` stops new spoke liquidity and spoke→hub swaps; LP exits, cancellation and hub→spoke
+remain available subject to their other checks. `removePool` requires both active reserves to be zero,
+pauses the spoke and unlists its asset; worthless shares and queued/parked escrow can remain.
+The killed pool cannot be unpaused, and old positions never fill against a later listing.
+
+`syncReserves` only decreases recorded reserves after actual token balance loss, excluding queue escrow.
+`haircutEscrow` is the guardian's bounded, pro-rata escrow reconciliation for an impaired asset while
+its pool is paused; it covers queued and parked positions and reverts if the visit budget is too small.
+These functions have role restrictions and do not run merely because a market price depegs.
+
+`setProbeExempt` disables zero-payout exit probes for an asset; real transfers still apply the token's
+own controls. It is intended for token behavior incompatible with a useful zero-value probe.

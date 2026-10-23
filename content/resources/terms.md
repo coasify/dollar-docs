@@ -8,7 +8,7 @@ description: Buckets website terms and conditions
 
 **Buckets, LLC**
 
-**Last Updated: August 25, 2026**
+**Last Updated: October 23, 2026**
 
 These Website Terms and Conditions ("Terms") govern your access to and use of any website,
 documentation, or online content published by Buckets, LLC ("Buckets," "we," or "us"), including any
@@ -46,17 +46,21 @@ publication, and documentation of software, together with the hosting of informa
 functions defined in its code, such as approval of software updates, configuration of operational
 parameters (including which digital assets the software supports, determined under published listing
 criteria), emergency pause capabilities, and cancellation of pending updates. Where such functions
-exist, they are constrained by structural limits written into the code and, for risk-affecting actions,
-by advance public notice periods (timelocks) recorded on-chain. Within a deployed implementation they
-cannot access, reduce, or transfer user balances or queued funds, apply prices other than the software's
-programmed rates, impose fees on protocol users, or block user withdrawals. Pause functions, where they
-exist, restrict new deposits and swaps only. Withdrawals and cancellations by users are never subject to
-a pause. Certain bookkeeping functions of deployed software (such as the reconciliation of recorded
-balances to actual balances following an external event) may be triggered by any person and execute only
-when conditions verifiable on-chain are met. They are rules of the code, not administrative functions.
-The scope of any such function, its constraints, and the identity of the persons or bodies configured to
-exercise it are matters of the relevant protocol's published documentation and on-chain record, not of
-these Terms.
+exist, their authority and limits are defined in the code. In the documented governance configuration,
+software updates and governor actions use advance public notice periods (timelocks) recorded on-chain.
+Pausers can restrict inflows immediately; the guardian can immediately tighten caps and apply the
+limited reconciliation described below; and the unpauser can immediately lift pauses and change the
+pauser list. These are separate authorities. Within the implementation described in the protocol
+documentation, administrative functions cannot transfer user balances or queued funds to another owner,
+apply prices other than the software's programmed rates, or impose fees on protocol users. Pause
+functions restrict deposits, swaps, and queue processing according to their scope. Withdrawals and
+owner cancellations are not pausable, but issuer restrictions, a shortfall, or other transaction
+conditions can still prevent completion. Governor-authorized reserve reconciliation and
+guardian-authorized adjustments to queued and parked escrow may reduce the recorded amounts following
+an external loss, only when the shortfall is verifiable on-chain and the code's other conditions are
+met. The scope of any such function, its constraints, and the identity of the persons or bodies
+configured to exercise it are matters of the relevant protocol's published documentation and on-chain
+record, not of these Terms.
 
 **Software updates.** Buckets may, from time to time, publish updates, modifications, or new versions of
 software, including software that supports additional digital assets or features. Where deployed

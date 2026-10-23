@@ -4,173 +4,197 @@ title: How Swaps Resolve
 description: The complete flow of a swap transaction
 ---
 
-# How Swaps Resolve
+# How swaps resolve
 
-This page explains the complete lifecycle of a swap, from input to output.
+A swap first looks for a user on the opposite side, then uses reserves behind any older
+same-direction positions. The caller chooses whether unfilled input can queue or must revert.
 
-The examples swap USDC for USDS, the two hub assets. The mechanics are the same for any listed pair —
-where a spoke changes the accounting, it is called out.
+The examples use an illustrative hub containing USDC and USDS. Amounts in the text diagrams are
+human-readable tokens; function inputs and returned token amounts use each token's native decimals.
 
 ## Direct swap flow
 
-When calling [`swap`](/capabilities/functions#swap)`(offerAsset, wantAsset, amount, minAmountOut, tip, deadline)`:
+[`swapOrQueue`](/capabilities/functions#swaporqueue)`(offerAsset, wantAsset, amount, minAmountOut, deadline)`:
 
+```text
+1. Check the deadline, listed assets and route.
+   Allowed single-leg routes: hub → hub, hub → spoke, spoke → hub.
+   Check protocol/spoke pauses, wind-down direction and the offer asset's inflow checks.
+
+2. Normalize the native offer budget and pull only whole normalized units.
+   Sub-unit offer-token dust stays with the caller.
+
+3. Fill from the exact-opposite queue, oldest first.
+   Pay offerAsset to those owners and use their escrowed wantAsset as output.
+   A failed payout parks that position; successful peer matches move no reserves.
+
+4. If input remains, visit up to eight older same-direction positions.
+   Fill them from route reserves; park any position whose payout fails.
+
+5. If that same-direction queue is now empty, fill from remaining route reserves.
+
+6. Convert the fill to native wantAsset and compare it with minAmountOut.
+   Revert if the immediate output is below the minimum.
+
+7. Send the immediate output to the caller.
+
+8. Escrow remaining offerAsset at the tail, subject to queue size and minimum rules.
+   Return amountIn, amountOut, amountInQueued and the new positionId.
 ```
-1. Validate
-   → deadline not passed, tip == 0, offerAsset != wantAsset
-   → classify the route: hub->hub, hub->spoke or spoke->hub (spoke->spoke reverts)
-   → offerAsset must be listed, unpaused, on peg, with a fresh price feed
 
-2. Pull offerAsset from the user (exact amount, sub-unit dust stays in the wallet)
+`amountIn` and `amountInQueued` are native offer-token amounts; `amountOut` and `minAmountOut` are
+native wanted-token amounts. `positionId` is `0` if nothing queued. The caller owns a queued position,
+receives its later payouts, and is the only address that can cancel it.
 
-3. Fill from the exact-opposite (wantAsset -> offerAsset) queue
-   → those owners receive offerAsset; their escrowed wantAsset goes to the swapper
-   → peer-to-peer: touches no protocol reserves
-
-4. If anything remains, settle the same-direction (offerAsset -> wantAsset) queue
-   from reserves, in FIFO order, up to 8 positions
-
-5. If that queue is now empty, fill the rest from protocol reserves on the route
-
-6. Require amountFilled >= minAmountOut, else revert
-
-7. Send the filled wantAsset to the user
-
-8. Escrow any remainder as a new position at the tail of the (offerAsset -> wantAsset) queue
-```
-
-**Note:** for "all or nothing" behavior, set `minAmountOut` to the full normalized amount, or use
-`swapExactInput`.
+Any revert undoes all steps, including earlier fills or parking in that transaction. For a complete
+immediate fill, use `swapExactInput`, or set `swapOrQueue`'s minimum to
+`floor(amount / S_offer) * S_want`.
 
 ## What a reserve fill moves
 
-Step 5 is the only step that touches pool accounting, and what it moves depends on the route.
+Reserve settlement in **steps 4 and 5** uses the same route-specific accounting:
 
 | Route | Effect |
 |-------|--------|
-| hub → hub | Hub reserve of `wantAsset` down, hub reserve of `offerAsset` up. Reserve-neutral: no DLRS minted or burned |
-| hub → spoke | Spoke reserve of `wantAsset` down, hub reserve of `offerAsset` up, and the spoke's DLRS-side reserve up |
-| spoke → hub | Hub reserve of `wantAsset` down, spoke reserve of `offerAsset` up, and the spoke's DLRS-side reserve down |
+| hub → hub | Wanted hub reserve decreases; offered hub reserve increases. No DLRS is minted or burned |
+| hub → spoke | Wanted spoke reserve decreases; offered hub reserve and that spoke's DLRS side increase |
+| spoke → hub | Wanted hub reserve and offered spoke's DLRS side decrease; offered spoke reserve increases |
 
-For a spoke → hub swap, instant liquidity is therefore capped by both the hub reserve of the wanted
-asset *and* the spoke's DLRS-side reserve above its protected minimum, whichever is smaller.
+A reserve-backed spoke-to-hub fill is capped by the wanted hub reserve and the spoke's DLRS side
+above its protected minimum, whichever is smaller. Exact-opposite peer matches use escrow instead
+and do not consume that allocation.
 
 ## Example: full instant swap from reserves
 
-```
-State before:
+```text
+Before:
   Hub USDC reserve: 10,000
-  Hub USDS reserve: 5,000
-  Both USDC->USDS and USDS->USDC queues: empty
+  Hub USDS reserve:  5,000
+  Both directed queues empty
 
-User swaps 3,000 USDC → USDS:
+User offers 3,000 USDC for USDS:
+  No opposite peer position or earlier same-direction position.
+  USDS reserves cover the entire output.
+  User receives 3,000 USDS; no queue position is created.
 
-1. 3,000 USDC pulled from the user
-2. Opposite (USDS->USDC) queue is empty — no peer match
-3. Same-direction queue is empty, so reserves are reachable
-4. USDS reserve (5,000) covers 3,000 ✓
-5. 3,000 USDS sent to the user
-
-State after:
+After:
   Hub USDC reserve: 13,000
-  Hub USDS reserve: 2,000
+  Hub USDS reserve:  2,000
 ```
+
+With the illustrated token decimals, the native input is `3_000e6` USDC and full output is
+`3_000e18` USDS. `swapExactInput` returns these two amounts and pays the specified recipient.
 
 ## Example: peer match against the opposite queue
 
-```
-State before:
+```text
+Before:
   Hub USDS reserve: 0
-  USDS->USDC queue: [Alice: 3,000 USDS escrowed, wants USDC]
+  USDS → USDC queue: Alice offers 3,000 USDS
 
-User swaps 3,000 USDC → USDS:
+User offers 3,000 USDC for USDS:
+  Alice receives the user's 3,000 USDC and her position closes.
+  The user receives Alice's escrowed 3,000 USDS.
 
-1. 3,000 USDC pulled from the user
-2. Opposite queue match:
-   → Alice receives 3,000 USDC, her position closes
-   → her escrowed 3,000 USDS goes to the swapper
-3. 3,000 USDS sent to the user
-
-State after:
-  Hub USDS reserve: 0        (untouched — no reserves were involved)
-  USDS->USDC queue: empty
+After:
+  Hub reserves unchanged
+  Alice's position removed
 ```
 
-Two users with opposite needs settle against each other, with no reserves in the middle.
+If Alice cannot receive USDC, her position is parked with its USDS escrow untouched. The swap
+continues to other available liquidity; it does not convert her escrow into receipts.
 
 ## Example: partial fill with queue
 
-```
-State before:
+```text
+Before:
   Hub USDC reserve: 10,000
-  Hub USDS reserve: 1,000
-  Both queues: empty
+  Hub USDS reserve:  1,000
+  Both directed queues empty
 
-User swaps 3,000 USDC → USDS with minAmountOut = 0:
+User offers 3,000 USDC through swapOrQueue with minAmountOut = 0:
+  Pull 3,000 USDC.
+  Pay 1,000 USDS from reserves.
+  Escrow 2,000 USDC as a new USDC → USDS position owned by the caller.
 
-1. 3,000 USDC pulled from the user
-2. Opposite queue empty
-3. Same-direction queue empty, reserves reachable
-4. USDS reserve (1,000) < 3,000 → fill 1,000
-5. 1,000 USDS sent to the user
-6. Remaining 2,000 USDC escrowed at the tail of the USDC->USDS queue
-
-State after:
+After:
   Hub USDC reserve: 11,000
-  Hub USDS reserve: 0
-  USDC->USDS queue: [User: 2,000 USDC escrowed]
+  Hub USDS reserve:      0
+  USDC → USDS queue: caller offers 2,000 USDC
 ```
 
-Had `minAmountOut` been set to 3,000, the whole call would have reverted with `MinAmountNotMet` instead —
-nothing filled, nothing queued.
+The returned tuple is `(3_000e6, 1_000e18, 2_000e6, positionId)` using the illustrated decimals.
+`QueueJoined` reports the escrow as `2_000e6` normalized units; for an 18-decimal offer token its
+event amount would differ from the native queued amount.
+
+Had the user required `3_000e18` native USDS immediately, `MinAmountNotMet` would revert the call.
+`swapExactInput` would instead reject the incomplete fill with `InsufficientLiquidity`; neither
+would leave funds queued.
 
 ## Example: the queue gets filled
 
-Continuing from above:
+Continue from the previous example:
 
-```
-State:
-  Hub USDS reserve: 0
-  USDC->USDS queue: [User: 2,000 USDC escrowed]
-
+```text
 Someone deposits 5,000 USDS into the hub:
+  Hub USDS reserve becomes 5,000.
+  The deposit receiver gets 5,000 DLRS.
+  The hub deposit does not itself settle the waiting queue.
 
-  Hub USDS reserve: 5,000
-  DLRS minted to the depositor: 5,000
+Anyone calls processQueue(USDC, USDS, maxPositions):
+  The queued owner receives 2,000 USDS and the position closes.
+  Its 2,000 USDC of escrow enters hub reserves.
 
-The queued position is now settleable. It clears on the next swap that
-would otherwise touch reserves on that route, or immediately if anyone calls:
-
-  processQueue(USDC, USDS, maxPositions)
-
-  → User receives 2,000 USDS, position closes
-  → their escrowed 2,000 USDC moves into hub reserves
-
-State after:
+After:
   Hub USDC reserve: 13,000
-  Hub USDS reserve: 3,000
-  USDC->USDS queue: empty
+  Hub USDS reserve:  3,000
+  USDC → USDS queue empty
 ```
 
-A hub deposit does not settle queues by itself — settlement is triggered by swaps on that route, by a
-spoke liquidity deposit, or by an explicit `processQueue` call. Since `processQueue` is permissionless,
-anyone can push it, and the caller chooses how many positions to drain. See [how much settles per
-transaction](/concepts/queue#how-much-settles-per-transaction).
+A later same-direction swap can also settle older positions before drawing reserves. A matching
+opposite swap can pay them peer to peer. Deposits into a **spoke** settle the lines enabled by the
+new liquidity, up to eight visits per line. See
+[How much settles per transaction](/concepts/queue#how-much-settles-per-transaction).
 
 ## Aggregator flow
 
-The [`swapExactInput`](/capabilities/functions#swapexactinput) function follows the same fill logic with
-one difference: it never queues.
+[`swapExactInput`](/capabilities/functions#swapexactinput)`(offerAsset, wantAsset, amount, minAmountOut, recipient, deadline)`
+uses the same peer matching and FIFO reserve logic, with a full-fill requirement:
 
-```
-1. Check the deadline
-2. Validate and classify the route; check the offer asset is unpaused and on peg
-3. Pull offerAsset from the user
-4. Fill from the opposite queue, then FIFO-settle, then reserves
-5. If the fill is short of the full amount, REVERT (no partial fills, no queue)
-6. Require filled >= minAmountOut, else revert
-7. Send wantAsset to msg.sender
+```text
+1. Check deadline and recipient; validate the route and offered-token inflow.
+2. Pull the rounded native input.
+3. Match opposite positions, settle earlier same-direction positions, then use reserves.
+4. Revert InsufficientLiquidity unless the full normalized input filled.
+5. Compare the native output with minAmountOut.
+6. Send the output to recipient; return native (amountIn, amountOut).
 ```
 
-The call either executes in full or reverts — no intermediate states. Note that the output goes to the
-caller, so a router receives the tokens and forwards them itself.
+It never queues. `recipient` can be the end user or the integration; the zero address and DollarStore
+itself are rejected. `getSwapQuote` estimates liquidity after the same bounded queue work, assuming
+all transfers succeed. Simulate the actual call with its caller and recipient to check execution,
+including issuer restrictions and payouts to queued owners.
+
+## Spoke-to-spoke flow
+
+[`swapSpokeToSpoke`](/capabilities/functions#swapspoketospoke)`(offerAsset, wantAsset, via, amount, recipient, deadline)`
+combines two single-leg routes for each hub token in `via`:
+
+```text
+offered spoke → hub token → wanted spoke
+```
+
+The contract validates the routes, pulls the rounded offered input once, and tries the hub tokens
+in the caller's order. Each entry carries up to what both legs can fill; any remainder moves to the
+next entry. The offer token must pass its inflow check. A hub token failing its own inflow check is
+skipped, because the second leg would absorb it into reserves.
+
+Both legs follow peer matching and reserve FIFO, so positions on the lines used can fill or be
+parked. When both legs use reserves, aggregate hub reserves end unchanged and hub-side allocation
+moves from the offered spoke to the wanted spoke.
+
+The call pays native wanted tokens to `recipient` and returns `(amountIn, amountOut)`. It fills the
+whole normalized order or reverts, never queues, and has no separate minimum-output argument.
+The `via` order can affect fillability. For a single hub token, chain the two quotes to estimate
+liquidity; for a list or transfer checks, simulate the full call. The ordinary swap endpoints still
+reject a spoke-to-spoke pair. See [Spoke to spoke](/concepts/spokes#spoke-to-spoke).

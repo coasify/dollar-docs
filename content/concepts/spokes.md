@@ -6,143 +6,178 @@ description: How spoke pools work and what a liquidity provider takes on
 
 # Spokes
 
-A spoke is how a stablecoin joins the protocol without the hub taking on its risk.
+A spoke adds a stablecoin alongside the hub. Its liquidity providers hold that spoke's asset mix;
+the spoke asset does not become part of the hub reserves represented by DLRS.
 
 ## What a spoke is
 
-**A par-value pair: one stablecoin against hub-side liquidity.**
+**One stablecoin paired with hub-side liquidity.**
 
-The hub holds the core stablecoins and is what DLRS represents. Every additional stablecoin gets its
-own spoke pool, and each spoke is isolated — its own liquidity, its own providers, its own risk.
+Each spoke has its own pool, receipt shares and two reserve components. Using an illustrative USDT
+spoke:
 
-A spoke has two sides:
-
-```
-Spoke pool (USDT example)
-├── Spoke reserve      USDT held by the pool
-└── DLRS-side reserve  hub-side liquidity funded with hub assets
+```text
+Spoke reserve      USDT held for this pool
+DLRS-side reserve  An internal allocation of hub liquidity
 ```
 
-Both sides are counted at par in normalized 6-decimal units, so the pool's value is simply
-`spokeReserve + dlrsReserve`.
+Both are accounted for at par in normalized 6-decimal units:
+`poolValue = spokeReserve + dlrsReserve`.
 
-The two sides exist because a swap consumes one and feeds the other. Someone buying USDT takes it out
-of the spoke reserve and pays in a hub asset; someone selling USDT does the reverse. The pool needs
-inventory on both sides to serve both directions.
+The DLRS side is an accounting allocation, rather than DLRS tokens in an LP's wallet. It is paid out
+from the hub's current basket, so it carries exposure to the hub assets as well as the spoke's own
+token exposure on the other side.
 
 ## How swaps move a spoke
 
-| Swap | Spoke reserve | DLRS side | Meaning |
-|------|---------------|-----------|---------|
-| hub → spoke | down | up | The pool sells its spoke asset and takes in a hub asset — **risk-reducing** |
-| spoke → hub | up | down | The pool absorbs the spoke asset and pays out a hub asset — **risk-increasing** |
+| Reserve-backed swap | Spoke reserve | DLRS-side reserve | Effect |
+|---------------------|---------------|-------------------|--------|
+| hub → spoke | down | up | The pool sells its spoke asset and takes in hub-side value |
+| spoke → hub | up | down | The pool absorbs its spoke asset and pays out hub-side value |
 
-Hub-to-hub swaps never touch a spoke.
+The hub token received in a hub-to-spoke swap enters hub reserves, and the spoke's DLRS-side reserve
+increases by the same normalized amount. No wallet DLRS is minted. The reverse consumes that
+allocation and pays from hub reserves. Hub-to-hub swaps leave spokes unchanged; peer matching moves
+escrow between users without touching reserves.
 
-The hub asset that comes in on a hub → spoke swap lands in hub reserves, and the spoke's DLRS side is
-credited by the same amount. The two always move together, so total DLRS supply always equals hub
-reserves no matter what a spoke does.
+During ordinary operations, wallet DLRS supply **plus all spokes' DLRS-side reserves** equals total
+hub reserves. A reserve write-down after an actual hub-token balance loss can break that equality.
 
 ## What a liquidity provider holds
 
-An LP can fund either side — the spoke asset itself, or a hub asset that credits the DLRS side. Either
-way they receive **receipt shares**: a pro-rata share of the pool's total value, non-transferable and
-tracked per pool rather than as a token.
+An LP can supply either the spoke token or a hub token. Either way, the LP receives non-transferable
+**receipt shares** representing a proportion of both reserve components. The caller names the owner
+with `deposit(poolId, asset, amount, receiver, deadline)`; only that receiver can withdraw its shares.
 
-The first LP into an empty pool mints shares 1:1 with the value they add. After that, shares are
-pro-rata against the pool value before the deposit. All rounding is against the depositor, so nobody
-mints more shares than the value they bring.
+The first deposit into a pool with no shares mints shares one for one with normalized value. Later
+deposits mint proportionally to the pool's value before the deposit, rounding down. An outstanding
+share balance can no longer be treated as a dollar amount after a reserve write-down. A pool with
+outstanding shares but zero value rejects new deposits with `PoolFullyImpaired`; restarting the asset
+uses a fresh pool.
 
 ### The position rotates
 
-This is the part worth understanding before supplying. Shares represent a pro-rata share of the *sum* of
-both sides, not of the asset you deposited. As swaps flow, the mix underneath your shares changes:
+Shares represent a proportion of the **sum of both sides**, rather than the asset deposited. As swaps
+flow, the mix underneath them changes:
 
+```text
+Illustrative spoke initially has 100,000 USDT supplied by another LP.
+You supply 100,000 USDC to its DLRS side and own 50% of the pool.
+Pool: 100,000 USDT + 100,000 hub-side units = 200,000 value.
+
+Users sell 60,000 USDT into the spoke through reserve-backed swaps.
+Pool: 160,000 USDT + 40,000 hub-side units = 200,000 value.
+You still own 50%, now represented by more USDT and less hub-side value.
 ```
-You fund the DLRS side with 100,000 USDC.
-Pool: 100,000 USDT + 100,000 hub-side units = 200,000 value. You hold 50% of it.
 
-The market sells USDT into the pool (spoke → hub, 60,000):
+The stated pool value is unchanged by these swaps, but the token mix changes. LPs absorb the spoke
+asset the market sells, at par, with no protocol fee paid to them. A market depeg changes what those
+tokens are worth externally; it does not itself rewrite recorded reserves. If the contract actually
+loses tokens, a governor `syncReserves` write-down can reduce the reserve value per share.
 
-Pool: 160,000 USDT + 40,000 hub-side units = 200,000 value. You still hold 50%.
-```
-
-Your share is unchanged in stated pool value, but the assets behind it are now mostly USDT. That is the
-position: an LP absorbs the asset the market is selling, at par, with no fee to compensate for it. **You are taking
-issuer exposure on that spoke's stablecoin.** If it depegs, the redemption value of your shares is what
-the reserves actually turn out to be worth, and a governor write-down (`syncReserves`) makes each share
-pay less — losses are shared pro-rata across the pool's LPs, and no further.
-
-The hub does not absorb any of this. Spoke activity never draws down hub reserves beyond that spoke's own
-DLRS side, so hub depositors are insulated from a spoke's losses.
+The spoke asset is not added to hub reserves, and reserve-backed spoke-to-hub swaps cannot spend
+beyond that spoke's available DLRS-side reserve. The spoke's hub-side component still depends on the
+hub assets and their transfer restrictions.
 
 ### Exiting
 
-Three ways out, none of them blocked by pause:
+`withdraw(poolId, receiptAmount, minAmountsOut, deadline)` is the proportional exit for both pool types.
+For a spoke, it burns your receipt shares and returns:
 
-| How | What you get |
-|-----|--------------|
-| `withdraw` with the spoke asset | Your pro-rata value, paid from the spoke reserve |
-| `withdraw` with a hub asset | Your pro-rata value, paid from hub reserves, consuming the DLRS side |
-| `redeemSpoke` | A proportional slice of **both** sides in one call |
+- Your proportional amount of the spoke token.
+- Your proportional DLRS-side value, paid in the hub assets by current hub reserve weight.
 
-The single-asset paths can fail when one side alone cannot cover your value. `redeemSpoke` always can,
-which is why it is the clean way to close a position completely — and burning the last shares drains
-both reserves to exactly zero.
+There is no single-asset withdrawal selector or separate `redeemSpoke` endpoint. To end up in one
+token, withdraw the basket and then swap. Burning the last shares drains both reserve components
+when the exit can execute.
+
+Use `previewWithdraw` to get the ordered native payout amounts: spoke token first, then all hub
+assets. Empty `minAmountsOut` accepts the calculated basket, or supply one native minimum per entry.
+[Supply](/concepts/supply#previewing-and-setting-minimums) shows the flow.
+
+Exits bypass pause and the spoke's minimum DLRS-side reserve. They still require successful token
+transfers and sufficient hub reserves; even an asset paying zero is normally probed for issuer
+restrictions unless governance has exempted it. A preview calculates amounts without running these
+transfer checks.
 
 ## The brake: minDlrsReserve
 
-A spoke → hub swap is what grows an LP's exposure to the spoke asset. `minDlrsReserve` is the floor that
-caps it: only the DLRS side **above** that minimum is available to swappers.
+`minDlrsReserve` limits reserve-backed spoke-to-hub swaps: only the DLRS side above the floor is
+available to those swaps.
 
-```
+```text
 dlrsReserve = 100,000, minDlrsReserve = 30,000
-→ at most 70,000 of spoke asset can be absorbed before the route stops filling
+→ up to 70,000 units can be paid from the DLRS side to swappers
 ```
 
-So the minimum is a ceiling on how much of the spoke asset the pool will take on. The governor sets it
-per spoke, through the timelock.
-
-It does **not** gate LP exits. An LP withdrawing or redeeming can draw the DLRS side all the way to
-zero — the floor restrains the market, never the provider getting out.
+This limits how much additional spoke-token inventory the pool absorbs through reserve fills.
+Exact-opposite peer matches use escrow instead of the pool's DLRS side. Governance sets the floor;
+an LP exit can take the DLRS side below it, including to zero.
 
 ## Launch caps
 
-A new spoke starts throttled. The launch cap is a ceiling on the pool's exposure — its spoke reserve
-plus its DLRS side — and deposits that would exceed it revert. The governor raises, lowers or removes it
-through the timelock; the guardian can tighten it instantly but can never loosen it. A cap of `0` means
-uncapped.
+Governance chooses the initial floor and launch cap together in
+`createSpoke(asset, priceFeed, minDlrsReserve, launchCap)`. A cap of `0` means uncapped, so a new spoke
+does not necessarily start with a positive cap.
+
+A spoke's cap applies to **its spoke reserve plus its DLRS-side reserve**, and is checked on deposits.
+Funding it with a hub token counts against that spoke cap, not the hub's cap. Queue escrow is excluded.
+The governor can raise, lower or remove a cap; the guardian can only tighten it. See
+[Security](/resources/security) for role and timelock configuration.
 
 ## Queues on a spoke
 
-Queues are per direction, so a spoke has its own: `USDC → USDT` is a different queue from
-`USDT → USDC`. They behave exactly as described in [The Queue](/concepts/queue).
+Queues are directed: `USDC → USDT` and `USDT → USDC` are different lines in this example. They also
+belong to a specific pool generation, so relisting an asset never revives a retired pool's queues.
 
-One spoke-specific behavior: adding liquidity to a spoke settles the queues that the new liquidity can
-now fill, in FIFO order and [up to 8 positions each](/concepts/queue#how-much-settles-per-transaction).
-An issuer topping up their spoke clears the demand that was waiting on it, in the same transaction. Any queue whose offer asset is unhealthy — deposit-paused, in a paused
-pool, or off peg — is skipped rather than settled, so a bad asset can neither be absorbed at par nor
-block someone else's deposit.
+A spoke-token deposit can settle hub-to-spoke demand; a hub-token deposit into the spoke can settle
+spoke-to-hub demand. Each visits up to eight positions **per affected line**, walking hub assets in
+listing order. A hub deposit into pool `0` does not trigger this work.
+
+Settlement skips lines whose offer asset fails its inflow checks, such as a paused asset or a stale
+or off-peg price. A failed payout parks the affected position so later positions can proceed. See
+[The queue](/concepts/queue).
 
 ## Lifecycle
 
-| Status | Deposits | spoke → hub | hub → spoke | LP exits & cancels |
-|--------|----------|-------------|-------------|--------------------|
-| **Active** | yes | yes | yes | yes |
-| **WindingDown** | no | no | yes | yes |
-| **Killed** | — | — | — | — |
+| Status | Deposits | spoke → hub | hub → spoke | LP exits | Queue cancellations |
+|--------|----------|-------------|-------------|----------|---------------------|
+| **Active** | yes | yes | yes | yes | yes |
+| **WindingDown** | no | no | yes | yes | yes |
+| **Killed** | no | no | no | No remaining reserve value | yes |
 
-Wind-down is the governor saying *no more exposure to this asset*: it blocks new liquidity and the
-risk-increasing direction, while leaving open everything that reduces risk or lets people out.
+The table describes lifecycle permissions; pauses, prices and token transfer restrictions still
+apply to the relevant operation. Wind-down blocks new exposure while retaining risk-reducing swaps
+and LP exits.
 
-A spoke can only be removed once it is fully drained — zero reserves on both sides, zero shares, and no
-queued depth on any route touching its asset. `redeemSpoke` is how LPs get it there. Removing it pauses
-the pool and unlists its asset; the poolId is retired but never reused, so ids never shift.
+Governance can remove a spoke once its spoke reserve and DLRS-side reserve are both zero. Worthless
+shares and unfilled queue positions do not block removal. The pool is paused, the asset is unlisted,
+and its ID is retired permanently. Old queue positions can no longer fill, but their owners can
+still cancel to recover surviving escrow, including parked positions when transfers can succeed.
+
+An asset can later be listed in a fresh pool if its existing escrow is covered. That new pool has
+separate shares and queues. An actual loss of escrow can be handled by the guardian's pro-rata
+`haircutEscrow` operation while the asset's pool is paused, including after removal; see
+[The queue](/concepts/queue#when-tokens-are-lost).
 
 ## Spoke to spoke
 
-The protocol itself does not route spoke to spoke — a direct attempt reverts with `InvalidRoute`. It is
-composed as two legs through a hub asset: spoke → hub, then hub → spoke.
+Use `swapSpokeToSpoke(offerAsset, wantAsset, via, amount, recipient, deadline)` to exchange two spoke
+assets atomically. `via` is an ordered list of hub assets. The contract tries each two-leg route in
+that order, carrying what both legs can fill before trying the next:
 
-A peripheral router contract is planned to perform both legs in a single call, built on top of the
-audited protocol rather than by changing it.
+```text
+offered spoke → selected hub asset → wanted spoke
+```
+
+The entire normalized input must fill or the call reverts. It never creates a queue position, pays
+the chosen recipient, and returns native `(amountIn, amountOut)`. The ordinary `swapOrQueue` and
+`swapExactInput` functions continue to reject a spoke-to-spoke pair.
+
+Each leg respects existing queues and reserve limits. The offered token must pass its inflow check;
+a `via` hub asset that fails its inflow check is skipped. List order can affect whether the full
+order fills, because the legs share pool liquidity and earlier positions can consume it.
+
+For one hub asset, chain `getSwapQuote` over the two legs to estimate liquidity. For a list, simulate
+the full call with its actual caller and recipient. Quotes assume transfers succeed; a failed payout
+to a queued owner can change the real fill. See [How swaps resolve](/concepts/resolution#spoke-to-spoke-flow).

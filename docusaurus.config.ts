@@ -2,6 +2,11 @@ import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
+// Keep the current deployment's canonical domain; the xyz project can use its existing variant flag.
+const siteUrl = process.env.SITE_URL ?? (process.env.SITE_VARIANT === 'xyz'
+  ? 'https://docs.dollarstore.xyz'
+  : 'https://docs.dollarstore.world');
+
 const config: Config = {
   title: 'DollarStore',
   tagline: '1:1 stablecoin swaps',
@@ -11,14 +16,17 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://docs.dollarstore.world',
+  url: siteUrl,
   baseUrl: '/',
 
-  organizationName: 'wandering-soupsmith',
+  organizationName: 'coasify',
   projectName: 'dollar-docs',
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  onBrokenAnchors: 'throw',
+  markdown: {
+    hooks: {onBrokenMarkdownLinks: 'throw'},
+  },
 
   i18n: {
     defaultLocale: 'en',
@@ -33,7 +41,7 @@ const config: Config = {
           path: 'content', // Use content folder for docs (docs/ is gitignored for reference)
           sidebarPath: './sidebars.ts',
           routeBasePath: '/', // Docs at root, no /docs/ prefix
-          editUrl: 'https://github.com/wandering-soupsmith/dollar-docs/tree/main/',
+          editUrl: 'https://github.com/coasify/dollar-docs/tree/main/',
         },
         blog: false, // Disable blog
         theme: {
@@ -47,7 +55,7 @@ const config: Config = {
     announcementBar: {
       id: 'protocol-access-notice',
       content:
-        'Protocol use is subject to the <a href="/resources/protocol-terms">Protocol Terms</a> and is not available to U.S. Persons.',
+        'Upcoming 0.11.0 interface — <a href="/resources/addresses">verify deployment version</a>. Protocol use is subject to the <a href="/resources/protocol-terms">Protocol Terms</a> and is not available to U.S. Persons.',
       backgroundColor: '#f8f1e0',
       textColor: '#7a5a0e',
       isCloseable: false,
@@ -71,17 +79,17 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          href: 'https://dollarstore.world',
+          href: 'https://www.dollarstore.xyz',
           label: 'Website',
           position: 'right',
         },
         {
-          href: 'https://app.dollarstore.world',
+          href: 'https://app.dollarstore.xyz',
           label: 'App',
           position: 'right',
         },
         {
-          href: 'https://github.com/wandering-soupsmith/dollar',
+          href: 'https://github.com/coasify/dollar',
           label: 'GitHub',
           position: 'right',
         },
@@ -111,12 +119,12 @@ const config: Config = {
           title: 'Links',
           items: [
             {
-              label: 'dollarstore.world',
-              href: 'https://dollarstore.world',
+              label: 'dollarstore.xyz',
+              href: 'https://www.dollarstore.xyz',
             },
             {
               label: 'GitHub',
-              href: 'https://github.com/wandering-soupsmith/dollar',
+              href: 'https://github.com/coasify/dollar',
             },
           ],
         },
@@ -134,7 +142,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Experimental software, not yet deployed. Use at your own risk.`,
+      copyright: `Experimental software. Verify the deployment version before integrating. Network fees and issuer restrictions apply.`,
     },
     prism: {
       theme: prismThemes.github,

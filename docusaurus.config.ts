@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'DollarStore',
   tagline: '1:1 stablecoin swaps',
-  favicon: 'img/favicon.svg',
+  favicon: 'img/favicon.png',
 
   future: {
     v4: true,
@@ -48,20 +48,20 @@ const config: Config = {
       id: 'protocol-access-notice',
       content:
         'Protocol use is subject to the <a href="/resources/protocol-terms">Protocol Terms</a> and is not available to U.S. Persons.',
-      backgroundColor: '#111827',
-      textColor: '#f9fafb',
+      backgroundColor: '#f8f1e0',
+      textColor: '#7a5a0e',
       isCloseable: false,
     },
     colorMode: {
-      defaultMode: 'dark',
-      disableSwitch: true, // Dark only
+      defaultMode: 'light',
+      disableSwitch: true, // Match the reference site's light palette.
       respectPrefersColorScheme: false,
     },
     navbar: {
-      title: 'dollarstore',
+      title: 'Dollar Store',
       logo: {
-        alt: 'DollarStore Logo',
-        src: 'img/logo.svg',
+        alt: '',
+        src: 'img/dollarstore-mark.png',
       },
       items: [
         {
@@ -137,7 +137,7 @@ const config: Config = {
       copyright: `Experimental software, not yet deployed. Use at your own risk.`,
     },
     prism: {
-      theme: prismThemes.dracula,
+      theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
       additionalLanguages: ['solidity'],
     },

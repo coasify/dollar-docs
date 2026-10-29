@@ -4,134 +4,163 @@ title: Overview
 description: Contract architecture and integration points
 ---
 
-# Capabilities Overview
+# Capabilities overview
 
-The DollarStore protocol consists of two contracts:
+This reference describes the **1.0.0** interface at
+[`b1668d0`](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/src/interfaces/IDollarStore.sol).
+Use [Addresses](/resources/addresses) to confirm a proxy and release that match it.
 
 | Contract | Purpose |
 |----------|---------|
-| **DollarStore** | Main protocol logic—pools, deposits/withdrawals, directed swaps, queues, risk controls. A UUPS proxy: integrate against the proxy address, never the implementation |
-| **DLRS** | Non-transferable 6-decimal receipt token, minted 1:1 when a hub stablecoin is deposited. Immutable, not upgradeable |
+| **DollarStore** | Pools, deposits, basket withdrawals, swaps, queues and risk controls. A UUPS proxy; integrate against the proxy address |
+| **DLRS** | Non-transferable, six-decimal hub receipt token, minted at par for normalized hub deposits. Immutable, not upgradeable |
 
 ## Pools
 
-Liquidity is organized into pools, identified by a `uint16` poolId.
+Pools have a `uint16` ID. The governor lists hub assets with `addHubAsset` and creates spokes with
+`createSpoke`, freezing token decimals when listed. An asset is listed in one pool at a time.
 
-| Pool | id | Contents |
-|------|----|----------|
-| **Hub** | `0` | The core stablecoins. Depositing mints DLRS 1:1 |
-| **Spoke** | `>= 1` | One additional stablecoin each, paired against a DLRS-side reserve funded with hub assets. Depositing mints non-transferable receipt shares |
+| Pool | ID | Contents and receipts |
+|------|----|-----------------------|
+| **Hub** | `0` | Several listed stablecoins. A hub deposit mints DLRS at 1:1 in normalized units |
+| **Spoke** | `>= 1` | One additional stablecoin plus an internal DLRS-side reserve funded with hub assets. A deposit mints non-transferable receipt shares |
 
-An asset belongs to exactly one pool. The governor lists hub assets with `addHubAsset` and creates
-spokes with `createSpoke`; both freeze the token's decimals at listing time. Listed assets are never
-unlisted individually — only a fully-drained spoke pool can be removed.
+A governor can remove a spoke once its spoke-asset reserve and DLRS-side reserve are zero. Worthless
+shares and queued or parked positions can remain; those positions no longer fill but remain
+owner-cancellable. Relisting the asset creates a fresh pool ID and separate queues.
 
 ### Routes
 
-| Route | Supported |
-|-------|-----------|
-| hub → hub | yes |
-| hub → spoke | yes |
-| spoke → hub | yes |
-| spoke → spoke | **not on the protocol** — reverts `InvalidRoute`. Composed as two legs through a hub asset, and a peripheral router is planned to do that in one call |
+| Route | Endpoint |
+|-------|----------|
+| hub → hub | `swapOrQueue` or `swapExactInput` |
+| hub → spoke | `swapOrQueue` or `swapExactInput` |
+| spoke → hub | `swapOrQueue` or `swapExactInput` |
+| spoke → spoke | `swapSpokeToSpoke`, through the caller's ordered hub-asset list; never queues |
+
+The ordinary pair endpoints reject spoke-to-spoke. The dedicated routed endpoint executes atomically
+and requires the whole rounded input to fill. It tries the caller's `via` list in order rather than
+searching for a best route; order can affect fillability.
 
 ## Units
 
-All protocol accounting is in **normalized 6-decimal units**. An asset with more decimals is scaled by
-`10**(decimals - 6)`; supported decimals are `[6, 18]`.
+Internal accounting uses **normalized six-decimal units**. For token decimals in `[6, 18]`, the frozen
+scaling factor is `10**(decimals - 6)`.
 
-- `amount` parameters are in the asset's **native** units.
-- `minAmountOut`, reserves, queue depths and minimum order sizes are in **normalized 6dp** units.
-- Sub-unit dust is never pulled from the caller; it stays in their wallet.
+| Quantity | Units |
+|----------|-------|
+| Swap `amount`, returned `amountIn`, returned `amountInQueued` | Native offered token |
+| Swap `minAmountOut`, returned `amountOut`, `getSwapQuote` result | Native wanted token |
+| Deposit `amount`, returned `amountIn` | Native deposited token |
+| Withdrawal/preview output arrays and withdrawal minimums | Native amount of the asset at that index |
+| Hub `receiptAmount` | DLRS, with six decimals |
+| Spoke `receiptAmount` | Receipt-share count; not a fixed dollar amount |
+| Reserves, DLRS-side reserve, queue depths/position amounts, minimum order sizes, caps and reserve floors | Normalized six-decimal units |
 
-Read `assetDecimals(asset)` and `assetScalingFactor(asset)` to convert.
+Read `assetDecimals(asset)` and `assetScalingFactor(asset)` to convert. With scaling factors `So` and
+`Sw`, a native input budget `amount` pulls `(amount / So) * So`; full native output is
+`(amount / So) * Sw`. Integer division rounds down. Sub-unit dust stays with the protocol's caller;
+a router that collected a larger budget must refund its own leftover input.
 
 ## Supported stablecoins
 
-The hub launches with **USDC and USDS**. Every other stablecoin joins as its own spoke.
-
-Examples throughout these docs follow that layout: a hub-to-hub swap is USDC ↔ USDS, and a hub-to-spoke
-swap is USDC ↔ USDT.
-
-The set is governed and grows over time, so resolve it at runtime rather than hardcoding:
+Read the deployment's asset set instead of assuming a launch list:
 
 ```solidity
-uint256 pools = dollarStore.poolCount();
+uint256 pools = dollarStore.poolCount(); // Includes retired pool IDs
 address[] memory hubAssets = dollarStore.getPoolAssets(0);
 bool listed = dollarStore.isAssetListed(token);
-uint16 pool = dollarStore.assetPoolId(token);   // 0 = hub, >= 1 = that spoke
+uint16 pool = dollarStore.assetPoolId(token); // Meaningful for routing when listed
 ```
 
-`assetPoolId` is what tells you which route you are on, and therefore which rules apply.
-
-The protocol is not deployed yet — see [Addresses](/resources/addresses).
+Use `getPoolStatus` to identify retired spokes. The USDC/USDS examples in these docs illustrate a
+six-decimal input and an eighteen-decimal output when both are listed as hub assets; verify the actual
+network and release in [Addresses](/resources/addresses).
 
 ## Integration paths
 
 ### For aggregators
 
-Use `getSwapQuote` to check instant fillability, then `swapExactInput` to execute:
+`getSwapQuote` returns estimated instant output in native wanted-token units. It models opposite-queue
+liquidity and reserves left after settling up to eight older same-direction positions. An existing
+same-direction queue does not always make the quote zero.
+
+Simulate with the actual caller and recipient, then use the all-or-nothing endpoint:
 
 ```solidity
-// Instantly fillable amount, in native units of the output token (0 if the route is unsupported,
-// or if a same-direction queue already owns the liquidity)
-uint256 quote = dollarStore.getSwapQuote(USDC, USDS, amountIn);
-
-if (quote >= expectedOut) {
-    // All-or-nothing: fills fully or reverts. Never queues. Pays msg.sender.
-    uint256 out = dollarStore.swapExactInput(
-        USDC,                  // offerAsset
-        USDS,                  // wantAsset
-        amountIn,              // amount, native units of USDC
-        minUnits,              // minAmountOut, normalized 6dp floor
-        block.timestamp + 300  // deadline
-    );
-}
-```
-
-Output goes to `msg.sender` — a router receives the tokens itself and forwards them.
-
-### For direct users
-
-Use `swap`, which fills what reserves allow and queues the rest:
-
-```solidity
-(uint256 filled, uint256 queued) = dollarStore.swap(
-    USDC,                  // offerAsset
-    USDS,                  // wantAsset
-    amount,                // native units of USDC
-    0,                     // minAmountOut: 0 = accept any instant fill and queue the remainder
-    0,                     // tip: must be 0 (reserved)
-    block.timestamp + 300  // deadline
+(uint256 amountIn, uint256 amountOut) = dollarStore.swapExactInput(
+    offerAsset,
+    wantAsset,
+    budget,               // Native offered token
+    minNativeOutput,      // Native wanted token
+    recipient,
+    block.timestamp + 300
 );
 ```
 
-Set `minAmountOut` to the full normalized amount to demand an instant fill or revert.
+Output goes directly to `recipient`. The quote checks route, pause and offer-asset inflow conditions
+but assumes every token payment succeeds; it checks neither caller balances/approvals nor recipient
+transfer permissions. Parking an older position can make execution fill more or less than quoted.
+
+### For direct users
+
+`swapOrQueue` fills what it can now and escrows the remainder under its caller:
+
+```solidity
+(uint256 amountIn, uint256 amountOut, uint256 amountInQueued, uint256 positionId) =
+    dollarStore.swapOrQueue(
+        offerAsset, wantAsset, budget, minNativeOutput, deadline
+    );
+```
+
+Set the minimum to full native output to require an instant fill, or zero to accept any instant fill
+and queue the rest. Queue size/capacity rules still apply. `positionId` is zero when nothing queued.
+The caller receives later payouts and is the only address allowed to cancel; there is no separate
+queue recipient. Routers should use a never-queue endpoint unless they deliberately manage positions.
 
 ### For liquidity providers
 
-`deposit` into the hub mints DLRS 1:1; `withdraw` burns it for any hub asset with reserves.
+`deposit` pulls input from its caller and credits non-transferable receipts to `receiver`:
 
 ```solidity
-uint256 dlrs = dollarStore.deposit(0, USDC, amount, deadline);
-uint256 out  = dollarStore.withdraw(0, USDS, units, deadline);
+(uint256 amountIn, uint256 receiptAmount) =
+    dollarStore.deposit(poolId, asset, budget, receiver, deadline);
+
+(address[] memory assets, uint256[] memory expected) =
+    dollarStore.previewWithdraw(poolId, receiptAmount);
+
+uint256[] memory minimums = new uint256[](0); // Accept the calculated basket
+(address[] memory paidAssets, uint256[] memory amounts) =
+    dollarStore.withdraw(poolId, receiptAmount, minimums, deadline);
 ```
 
-Depositing into a spoke — either its own asset or a hub asset funding its DLRS side — mints receipt
-shares instead. Use `redeemSpoke` to exit proportionally across both sides of the pool.
+A hub exit burns DLRS and pays a reserve-weighted basket of hub assets. A spoke exit burns shares and
+pays a proportional mix of the spoke asset and hub assets. There is no selected-asset withdrawal or
+separate `redeemSpoke` endpoint. To end in one token, withdraw and then swap.
 
-## Key invariants
+Build per-asset native minimums from `previewWithdraw`'s returned order, not `getPoolAssets` for a spoke.
+A new hub listing adds an output slot, so a stale minimums array can revert on length. A preview checks
+the calculation, not the caller's balance or issuer transfer permissions.
 
-1. **1:1 ratio**: every swap and every deposit/withdrawal is 1:1 in normalized units. No fees, no curve.
-2. **DLRS supply matches reserves**: total DLRS supply equals the sum of hub reserves; queue escrow is
-   never counted as a reserve.
-3. **FIFO ordering**: each directed `(offerAsset → wantAsset)` queue is strictly first-in-first-out, and
-   a swapper only reaches reserves once the queue ahead of it is cleared.
-4. **Exits stay open**: `withdraw`, `redeemSpoke` and `cancelQueue` are not blocked by pause.
-5. **All-or-nothing for routers**: `swapExactInput` executes in full or reverts—no intermediate states.
+## Core behavior
+
+1. **Swap parity:** swaps exchange equal normalized quantities, with no protocol fee or price curve.
+   Hub deposits mint DLRS at par; spoke shares are valued proportionally to current pool value.
+2. **Reserve accounting:** before reserve write-downs, total hub reserves equal DLRS total supply plus
+   the sum of spokes' DLRS-side reserves. Queue escrow is separate. A reserve write-down reduces recorded
+   backing without reducing DLRS balances.
+3. **FIFO reserve access:** peer matching starts with the exact-opposite queue. A new swap uses reserves
+   only after its earlier same-direction queue is cleared; inline settlement visits up to eight of
+   those positions per line.
+4. **Pause-independent exit entrypoints:** `withdraw` and `cancelQueue` are not blocked by protocol
+   pause. Reserve insufficiency or issuer-controlled token transfers can still prevent payment.
+5. **Parked escrow:** a failed queue payment parks the position, leaving its original offered token in
+   escrow. The owner retries cancellation when that token can be returned; no receipt fallback is minted.
+6. **All-or-nothing routing:** `swapExactInput` and `swapSpokeToSpoke` either fill their rounded input in
+   full or revert. Neither creates a queued position.
 
 ## Next steps
 
-- [Functions](/capabilities/functions) — Complete function reference
-- [Events](/capabilities/events) — Events for monitoring
-- [Errors](/capabilities/errors) — Error conditions and handling
+- [Functions](/capabilities/functions) — parameters, return values and governance controls
+- [Events](/capabilities/events) — indexing payments and position changes
+- [Errors](/capabilities/errors) — failure conditions and recovery

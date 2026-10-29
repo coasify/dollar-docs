@@ -4,151 +4,158 @@ title: Time vs Slippage
 description: The fundamental tradeoff the protocol makes
 ---
 
-# Time vs Slippage
+# Time vs slippage
 
-Every exchange mechanism makes a tradeoff. The DollarStore protocol's tradeoff is explicit: **fixed
-rate, variable time**.
+DollarStore's tradeoff is **fixed rate, variable execution time**. A larger swap does not move the
+protocol's rate; it may exhaust immediate liquidity and need to queue.
 
 ## The traditional tradeoff
 
-AMMs and order books resolve price differently, and charge for it:
-
-| Mechanism | Users get | Users give up |
-|-----------|---------|-------------|
-| AMM (Uniswap) | Execution on demand | Price (slippage + fees) |
-| Order book | Price discovery | Certainty of execution (may not fill) |
-| DollarStore | Fixed 1:1 rate | Certainty of execution (may queue) |
+| Mechanism | What sets execution | What can vary |
+|-----------|---------------------|---------------|
+| AMM | A pool's price curve and liquidity | Output price, fees and fillability |
+| Order book | Matching bids and offers | Execution price and whether an order fills |
+| DollarStore | A fixed 1:1 normalized rate and available liquidity | How much fills now and how long a queued remainder waits |
 
 ## There is no slippage
 
-Not "low slippage" — none. The rate is fixed at 1:1 in normalized units by the contract itself. There
-is no curve, no pool ratio, no price impact, and no fee. The size of an order does not move the
-protocol rate.
+The contract exchanges the same number of normalized units on each side. There is no price curve,
+pool-ratio adjustment or protocol fee. The two tokens' external market prices can still differ;
+the protocol rate is not a statement about their market value.
 
-The consequence is that **the classic reasons to set `minAmountOut` do not exist here**. Nothing can
-front-run you into a worse price, because there is no price to worsen. Splitting an order across
-transactions gains you nothing.
+Other transactions can consume liquidity before yours executes. This changes whether your order
+fills immediately, rather than giving it a different protocol exchange rate.
 
 ## minAmountOut is a fill floor, not a price floor
 
-This is the one thing to internalize if you have integrated an AMM before.
+For `swapOrQueue`, `minAmountOut` answers: **how much wanted token must arrive now for this transaction
+to be acceptable?** Less than that reverts the entire call. If the floor is met, any unfilled input
+joins the queue, subject to the queue's limits.
 
-| | On an AMM | Here |
-|---|---|---|
-| What can vary | The **rate** you get | The **quantity** filled instantly |
-| What `minAmountOut` protects | Against the price moving | Against partial execution |
+`minAmountOut` is expressed in **native decimals of the output token**. It uses the same units as
+`amountOut` and `getSwapQuote`, rather than the protocol's normalized accounting unit.
 
-Here `minAmountOut` answers a different question: *how much of this must fill right now for the
-transaction to be acceptable?* Anything below the floor reverts. Anything above it fills, and the rest
-goes to the queue.
+For scaling factors `S_offer` and `S_want`:
 
-It is expressed in **normalized 6-decimal units**, not the output token's native decimals. Since the
-rate is 1:1, the normalized amount of your input is also the most you could ever get out.
-
-This matters on the hub itself, because its two assets do not share decimals:
-
-```
-10,000 USDC  (6 decimals)  = 10_000_000_000 native            → 10_000_000_000 units
-10,000 USDS  (18 decimals) = 10_000_000_000_000_000_000_000   → 10_000_000_000 units
+```text
+normalized input = floor(native input budget / S_offer)
+full native output = normalized input * S_want
 ```
 
-Same value, same normalized amount, native figures twelve orders of magnitude apart. Passing a native
-number where a normalized one belongs is the mistake to watch for.
+An illustrative USDC-to-USDS trade, with 6 and 18 token decimals respectively:
 
-Convert with `assetScalingFactor(asset)`: `units = nativeAmount / scalingFactor`.
+```text
+Input budget:          10,000 USDC = 10_000e6 native USDC
+Normalized input:                  10_000e6 accounting units
+Full output / minimum: 10,000 USDS = 10_000e18 native USDS
+```
+
+The normalized amounts match; the native numbers do not. For an 18-decimal offered token, sub-unit
+input dust is left with the caller. The native output minimum is compared as supplied, without
+rounding it down to normalized units.
 
 ## Choosing how much must fill
 
-You choose how much of the order must settle immediately for the transaction to be acceptable. All
-three cases use the same parameter.
-
-None of these makes execution certain — they decide what happens when reserves fall short. What the
-protocol fixes is the rate, not the timing.
+The examples assume the illustrated tokens are listed, the offered tokens have been approved to
+the DollarStore proxy, and the caller can receive the wanted token.
 
 ### The whole order, or nothing
 
-Set `minAmountOut` to the full normalized amount. Either the whole order settles in that transaction or
-it reverts — and because nothing is left over, nothing is queued.
+Use [`swapExactInput`](/capabilities/functions#swapexactinput) for a full immediate fill or a revert.
+It never queues and pays the explicit `recipient`:
 
 ```solidity
-uint256 units = amount / dollarStore.assetScalingFactor(USDC); // 10_000_000_000
+uint256 amount = 10_000e6; // Native USDC budget.
+uint256 units = amount / dollarStore.assetScalingFactor(USDC);
+uint256 fullOut = units * dollarStore.assetScalingFactor(USDS);
 
-// Settles 10,000 USDC → 10,000 USDS in full, or reverts. Never queues.
-(uint256 filled, uint256 queued) = dollarStore.swap(
-    USDC, USDS, amount, units, 0, block.timestamp + 300
+(uint256 amountIn, uint256 amountOut) = dollarStore.swapExactInput(
+    USDC, USDS, amount, fullOut, recipient, block.timestamp + 300
 );
-// filled == units, queued == 0
+// amountIn == 10_000e6 native USDC; amountOut == 10_000e18 native USDS.
 ```
 
-[`swapExactInput`](/capabilities/functions#swapexactinput) behaves this way by construction and is the
-right endpoint for routers and solvers.
+The full normalized input must fill even if you set a lower output minimum. Setting the full native
+output as the minimum on `swapOrQueue` also makes that call complete or revert, with nothing queued.
 
 ### A minimum share now, remainder queued
 
-Set `minAmountOut` to the fraction you require. Below it, the call reverts and nothing happens; at or
-above it, you are paid the settled portion and the shortfall is escrowed in the queue.
+Use [`swapOrQueue`](/capabilities/functions#swaporqueue) to require a portion immediately and queue
+the rest. It pays the caller and creates any remaining position under that same caller:
 
 ```solidity
-// "Settle at least 80% now, queue whatever is left"
-uint256 floor = (units * 80) / 100;
+uint256 amount = 10_000e6; // Native USDC budget.
+uint256 units = amount / dollarStore.assetScalingFactor(USDC);
+uint256 fullOut = units * dollarStore.assetScalingFactor(USDS);
+uint256 minimumNow = fullOut * 80 / 100;
 
-(uint256 filled, uint256 queued) = dollarStore.swap(
-    USDC, USDS, amount, floor, 0, block.timestamp + 300
-);
-// e.g. filled == 8_500_000_000, queued == 1_500_000_000
+(uint256 amountIn, uint256 amountOut, uint256 queued, uint256 positionId) =
+    dollarStore.swapOrQueue(
+        USDC, USDS, amount, minimumNow, block.timestamp + 300
+    );
+// Example fill: amountIn == 10_000e6 USDC, amountOut == 8_500e18 USDS,
+// queued == 1_500e6 USDC; positionId identifies the caller's escrow.
 ```
 
-The floor is enforced atomically at execution, so it also covers liquidity disappearing between the
-moment you quoted and the moment your transaction lands.
+The output and queued input use **different tokens' native decimals**. `QueueJoined` and later
+`QueueFilled` events instead report normalized units. See [Events](/capabilities/events).
 
 :::warning The remainder has to be a valid queue order
-If the leftover is below the queue's [minimum order size](/concepts/queue#queue-limits) and that queue
-already has positions, the whole swap reverts with `OrderTooSmall` — even though your percentage floor
-was met. Check `getMinimumOrderSize(offerAsset, wantAsset)` when the remainder could be small, or demand
-100% instead.
+A nonempty line imposes a minimum on the queued remainder, and a full line accepts no new position.
+The whole transaction can revert with `OrderTooSmall` or `QueueFull` even when the immediate output
+floor is met. `getMinimumOrderSize` returns normalized units; scale it to native offer-token units
+when comparing with the remainder. See [Queue limits](/concepts/queue#queue-limits).
 :::
 
 ### A partial fill with nothing queued
 
-`swap` always queues what it cannot fill. To take a partial fill and keep the rest in your wallet, don't
-submit the rest: quote first, then send only the amount you want filled, as an all-or-nothing order.
+`swapOrQueue` escrows everything it cannot fill. To keep unused funds in your wallet, quote the
+available output, convert it to an input amount, and submit only that amount through `swapExactInput`:
 
 ```solidity
-uint256 quote = dollarStore.getSwapQuote(USDC, USDS, amount); // native units of USDS
-uint256 fillable = quote / dollarStore.assetScalingFactor(USDS);
+uint256 quote = dollarStore.getSwapQuote(USDC, USDS, budget); // Native USDS.
+uint256 fillableUnits = quote / dollarStore.assetScalingFactor(USDS);
 
-if (fillable > 0) {
-    uint256 amountIn = fillable * dollarStore.assetScalingFactor(USDC);
-    dollarStore.swap(USDC, USDS, amountIn, fillable, 0, block.timestamp + 300);
+if (fillableUnits > 0) {
+    uint256 smallerInput = fillableUnits * dollarStore.assetScalingFactor(USDC);
+    dollarStore.swapExactInput(
+        USDC, USDS, smallerInput, quote, recipient, block.timestamp + 300
+    );
 }
-// The USDC you did not submit never left your wallet
+// Only the smaller input is submitted; the rest remains with the caller.
 ```
+
+Simulate the smaller call before sending it. A quote assumes transfers succeed and reports liquidity
+for the amount quoted; a smaller retry or a changed state can produce a different outcome. The
+exact-input call reverts rather than queues if it cannot complete.
 
 ## What limits instant liquidity
 
-Three things, beyond the raw reserve balance:
-
-- **FIFO.** If a queue already exists in the same direction, it owns the instant liquidity. A later
-  swapper reaches reserves only once that queue is cleared.
-- **Route.** Reserves are per pool. A hub → spoke swap draws on that spoke's reserve; a spoke → hub swap
-  draws on hub reserves and is additionally capped by the spoke's DLRS-side reserve above its
-  [protected minimum](/concepts/spokes#the-brake-mindlrsreserve).
-- **Risk gates.** A depegged, stale-priced or paused offer asset cannot flow in at all.
+- **FIFO.** An older same-direction queue gets reserve liquidity first. A swap visits up to eight
+  positions and can then use remaining reserves only if that line has cleared. Opposite peer matches
+  are considered separately, first.
+- **Route.** Hub-to-spoke reserve fills use that spoke's token reserve. Spoke-to-hub reserve fills use
+  the wanted hub reserve and the spoke's DLRS side above its
+  [minimum](/concepts/spokes#the-brake-mindlrsreserve), whichever is smaller.
+- **Risk gates.** The offer token must pass pause and fresh-price checks. A paused spoke also blocks
+  swaps touching it; wind-down blocks the spoke-to-hub direction.
+- **Transfers.** The immediate recipient and queued owners must be able to receive their tokens.
+  A failed queued payout parks that position; a failed immediate payout reverts the call.
 
 ## Predictable behavior for integrators
 
-The [`swapExactInput`](/capabilities/functions#swapexactinput) function never queues. It either executes
-fully or reverts.
+`swapExactInput` returns native `(amountIn, amountOut)`, delivers the whole normalized order to its
+`recipient`, and never queues. The recipient can be the calling integration or the end user.
 
-```solidity
-// This either delivers the full amount of USDS, or reverts.
-// Never partial fills, never queues. Output goes to msg.sender.
-uint256 out = dollarStore.swapExactInput(
-    USDC, USDS, amountIn, minUnits, block.timestamp + 300
-);
-```
+[`getSwapQuote`](/capabilities/functions#getswapquote) returns native wanted-token output, capped at
+the requested order. It includes opposite-queue escrow and reserves left after simulating up to eight
+same-direction settlements. An existing queue therefore does not automatically make the quote zero.
 
-Aggregators check [`getSwapQuote`](/capabilities/functions#getswapquote) first. It returns the amount
-fillable *right now*, in native units of the output token, capped at what was asked. Compare it against
-what you need rather than testing for non-zero — a partial number means `swapExactInput` will revert.
-It returns 0 for an unsupported route, and also when a same-direction queue holds the liquidity.
+Compare the quote with the full native output calculated for the input, rather than checking only
+for nonzero liquidity. The view returns zero for unsupported routes or failed route, pause or
+offer-price checks. It takes no caller or recipient and assumes every transfer succeeds; simulate
+the actual call with both addresses to check execution.
+
+For two spoke tokens, use the dedicated all-or-nothing
+[`swapSpokeToSpoke`](/concepts/spokes#spoke-to-spoke) endpoint and simulate the selected `via` list.
+The ordinary quote does not accept a spoke-to-spoke pair directly.

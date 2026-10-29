@@ -1,171 +1,235 @@
 ---
 sidebar_position: 2
 title: Quickstart
-description: Integrate DollarStore in 5 minutes
+description: Integrate the DollarStore 1.0.0 interface
 ---
 
 # Quickstart
 
-Everything below targets the **proxy** address. The implementation is published only so its bytecode can
-be verified — never call it directly.
+Integrate against the **DollarStore proxy**, never the implementation address.
 
-:::info Not deployed yet
-There are no live addresses to point this at. See [Addresses](/resources/addresses) for status. The
-interface below is what you will integrate against.
+:::info Interface version
+These examples describe the **1.0.0** interface at
+[`b1668d0`](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/src/interfaces/IDollarStore.sol).
+Confirm the matching network, release and proxy in [Addresses](/resources/addresses) before sending
+transactions; a deployment with an older interface needs its own ABI.
 :::
+
+## Ethereum mainnet configuration
+
+| Setting | Value |
+|---------|-------|
+| Chain ID | `1` |
+| DollarStore proxy and approval spender | `0x825e1e13D804816b8ccdA405F1a7B7915461dDc4` |
+| Core pool | `0` — USDC and USDS |
+| USDG spoke | `1` — USDG or a listed hub asset can fund this pool |
+
+Use an Ethereum mainnet RPC, native ETH for gas, and the `1.0.0` ABI from the release reference above.
+The [Addresses](/resources/addresses) page lists token contracts, decimals and the configuration snapshot.
+These are live contracts: use a local mainnet fork for tests that should not spend real assets.
 
 ## The five things to know
 
-1. **Approve the proxy** for the input token before any deposit or swap. The protocol pulls with
-   `transferFrom`.
-2. **Every state-changing call takes a `deadline`** (a Unix timestamp). There is no default.
-3. **`minAmountOut` is in normalized 6-decimal units**, not the output token's decimals — and it is a
-   floor on *quantity filled*, not on price. See [Time vs Slippage](/concepts/time-tradeoff).
-4. **Output goes to `msg.sender`.** There is no recipient parameter, so a router receives the tokens and
-   forwards them itself.
-5. **Sub-unit dust is never pulled.** A token with more than 6 decimals leaves the remainder in your
-   wallet rather than rounding it away.
-
-:::info Assets in these examples
-The hub launches with **USDC and USDS**, and the examples below swap between them. Other stablecoins
-join as spokes. The listed set is governed and grows, so resolve it at runtime instead of hardcoding:
-see [Discovering what is listed](#discovering-what-is-listed).
-:::
+1. **The caller pays.** Approve the proxy before a direct deposit or swap; it pulls the offered token
+   with `transferFrom`. A router must obtain the input from its user and approve the proxy itself.
+2. **Deposits, withdrawals and swaps take a deadline.** It is a Unix timestamp with no default.
+   `cancelQueue` and `processQueue` do not take one.
+3. **`minAmountOut` uses the output token's native decimals.** It is a floor on the quantity delivered
+   immediately. Reserves and queue accounting still use normalized six-decimal units.
+4. **Ownership is explicit.** `deposit` credits `receiver`; the all-or-nothing swaps pay `recipient`.
+   `swapOrQueue` pays its caller, who also owns any queued position and later payouts.
+5. **Sub-unit input dust is not pulled.** Amounts are rounded down to a whole normalized unit. If a
+   router first collects a larger budget, it must return any input the protocol did not pull.
 
 ## Units
 
-The protocol accounts in normalized 6-decimal units. Convert with the scaling factor the contract
-already exposes:
+Read each listed asset's frozen scaling factor, `10**(decimals - 6)`:
 
 ```solidity
-uint64 scaling = dollarStore.assetScalingFactor(token); // 10**(decimals - 6)
-uint256 units  = nativeAmount / scaling;
-uint256 native = units * scaling;
+uint256 offerScaling = dollarStore.assetScalingFactor(offer);
+uint256 wantScaling = dollarStore.assetScalingFactor(want);
+uint256 units = budget / offerScaling;
+uint256 nativeInput = units * offerScaling;
+uint256 fullNativeOutput = units * wantScaling;
 ```
 
-Because the rate is 1:1, the normalized amount of your input is also the maximum you can get out.
+For an illustrative swap from 1,000 USDC with 6 decimals to USDS with 18 decimals, the input is
+`1_000_000_000` and the full output minimum is `1_000_000_000_000_000_000_000`. The examples assume those
+assets are listed as hub assets on the chosen deployment; they do not establish a launch asset list.
+
+See [Time vs Slippage](/concepts/time-tradeoff) for choosing an immediate-fill floor.
 
 ## Swapping from a contract
 
-The router path: quote, then execute all-or-nothing.
+Use `swapExactInput` for a router: the rounded input fills in full or the whole transaction reverts.
+The protocol can pay the user directly. This adapter uses OpenZeppelin's `SafeERC20`; the user
+approves the router and supplies the recipient and deadline.
 
 ```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 interface IDollarStore {
-    function getSwapQuote(address offerAsset, address wantAsset, uint256 amount)
-        external view returns (uint256);
     function assetScalingFactor(address asset) external view returns (uint64);
     function swapExactInput(
         address offerAsset,
         address wantAsset,
         uint256 amount,
         uint256 minAmountOut,
+        address recipient,
         uint256 deadline
-    ) external returns (uint256 amountOut);
+    ) external returns (uint256 amountIn, uint256 amountOut);
 }
 
-function swapStables(address offer, address want, uint256 amountIn, address to) external {
-    IERC20(offer).safeTransferFrom(msg.sender, address(this), amountIn);
+contract StableRouter {
+    using SafeERC20 for IERC20;
 
-    // 1. Will it fill? The quote is in native units of `want`, capped at what you asked for.
-    uint256 quote = dollarStore.getSwapQuote(offer, want, amountIn);
-    uint256 wantScaling = dollarStore.assetScalingFactor(want);
-    uint256 quoteUnits = quote / wantScaling;
+    IDollarStore public immutable dollarStore;
 
-    uint256 offerUnits = amountIn / dollarStore.assetScalingFactor(offer);
-    require(quoteUnits >= offerUnits, "insufficient instant liquidity");
+    constructor(IDollarStore store) {
+        dollarStore = store;
+    }
 
-    // 2. Approve the proxy and execute. Reverts rather than partially filling.
-    IERC20(offer).forceApprove(address(dollarStore), amountIn);
-    uint256 out = dollarStore.swapExactInput(
-        offer,
-        want,
-        amountIn,
-        offerUnits,           // minAmountOut: normalized 6dp floor
-        block.timestamp + 300 // deadline
-    );
+    function swapStables(
+        address offer, address want, uint256 budget, address recipient, uint256 deadline
+    ) external returns (uint256 amountIn, uint256 amountOut) {
+        uint256 offerScaling = dollarStore.assetScalingFactor(offer);
+        uint256 units = budget / offerScaling;
+        uint256 roundedInput = units * offerScaling;
+        uint256 fullOutput = units * dollarStore.assetScalingFactor(want);
 
-    // 3. Output landed here, not with the user. Forward it.
-    IERC20(want).safeTransfer(to, out);
+        // The user approves this router. Pull only what the protocol can consume.
+        IERC20(offer).safeTransferFrom(msg.sender, address(this), roundedInput);
+        IERC20(offer).forceApprove(address(dollarStore), roundedInput);
+
+        return dollarStore.swapExactInput(
+            offer, want, roundedInput, fullOutput, recipient, deadline
+        );
+    }
 }
 ```
 
-Compare the quote against what you need rather than testing for non-zero: it can come back partial, and
-a partial quote means `swapExactInput` will revert.
+`amountIn` is the native input actually pulled; `amountOut` is native output delivered to `recipient`.
+For an indication of liquidity, call `getSwapQuote(offer, want, budget)` and compare its native output
+with `fullNativeOutput`. The quote assumes token payments succeed; simulate the actual swap with its
+caller and recipient to check execution. A partial quote alone does not determine whether execution
+will fail, because failed payouts to older queue owners can change which liquidity is available.
 
 ## Swapping from an app
 
+Use `swapOrQueue` when the user intends to leave unfilled input in a queue. This example requires at
+least 80% immediately; the remainder queues if permitted by the queue's size and capacity rules.
+`publicClient`, `walletClient`, the token addresses, `dollarStore` and the current `abi` come from your
+deployment configuration.
+
 ```typescript
-import { parseUnits } from 'viem'
+import { erc20Abi, parseEventLogs, parseUnits } from 'viem'
 
-const amountIn = parseUnits('10000', 6) // 10,000 USDC
+const [user] = await walletClient.getAddresses()
+const budget = parseUnits('1000', 6) // Native USDC
+const fullOutput = parseUnits('1000', 18) // Native USDS
+const minOut = fullOutput * 80n / 100n
 
-// 1. How much fills right now?
-const quote = await publicClient.readContract({
-  address: dollarStore, abi, functionName: 'getSwapQuote',
-  args: [USDC, USDS, amountIn],
-})
-
-// 2. Normalized floor. Rate is 1:1, so input units == max output units.
-const offerScaling = await publicClient.readContract({
-  address: dollarStore, abi, functionName: 'assetScalingFactor', args: [USDC],
-})
-const units = amountIn / offerScaling
-
-// 3. Approve the proxy
-await walletClient.writeContract({
+const approvalHash = await walletClient.writeContract({
+  account: user,
   address: USDC, abi: erc20Abi, functionName: 'approve',
-  args: [dollarStore, amountIn],
+  args: [dollarStore, budget],
 })
+const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash })
+if (approvalReceipt.status !== 'success') throw new Error('Token approval reverted')
 
-// 4. Simulate, then send. Every validation runs in the simulation, so a clean
-//    simulate in the current block means route, peg, pause and liquidity all pass.
 const { request } = await publicClient.simulateContract({
-  address: dollarStore, abi, functionName: 'swap',
+  account: user,
+  address: dollarStore, abi, functionName: 'swapOrQueue',
   args: [
-    USDC, USDS, amountIn,
-    units,                            // minAmountOut: require a full instant fill
-    0n,                               // tip: must be 0
+    USDC, USDS, budget, minOut,
     BigInt(Math.floor(Date.now() / 1000) + 300),
   ],
-  account,
 })
 const hash = await walletClient.writeContract(request)
+const receipt = await publicClient.waitForTransactionReceipt({ hash })
+if (receipt.status !== 'success') throw new Error('Swap reverted')
+const joined = parseEventLogs({
+  abi,
+  eventName: 'QueueJoined',
+  logs: receipt.logs.filter(log =>
+    log.address.toLowerCase() === dollarStore.toLowerCase()),
+})
+const positionId = joined[0]?.args.positionId // Absent when nothing queued
 ```
 
-Change one argument to change what you require: `units` demands the full amount or reverts, `units * 80n
-/ 100n` demands 80% and queues the rest, `0n` takes whatever reserves allow and queues the remainder. See
-[Choosing how much must fill](/concepts/time-tradeoff#choosing-how-much-must-fill).
+At call time, `swapOrQueue` returns `(amountIn, amountOut, amountInQueued, positionId)`: input and queued
+input are native USDC, output is native USDS, and the ID is zero when nothing queued. A simulation's
+values describe its block; read the mined `Swap` and `QueueJoined` events for what actually happened.
+
+Set the native output minimum to `fullOutput` to require a full instant fill, or `0n` to accept any
+instant amount and queue the rest. For a swap that must never queue, use
+`swapExactInput(offer, want, budget, minOut, recipient, deadline)` instead.
+
+## Depositing and withdrawing
+
+Deposits take an explicit owner and return actual native input plus receipts:
+
+```solidity
+(uint256 amountIn, uint256 receiptAmount) =
+    dollarStore.deposit(poolId, asset, budget, receiver, deadline);
+```
+
+The caller pays; `receiver` owns the non-transferable DLRS or spoke shares and must be able to call
+`withdraw`. Anyone can fund a receiver, so a contract's receipt balance need not equal its own deposits.
+
+Withdrawals return a proportional basket, with no chosen output asset:
+
+```solidity
+(address[] memory assets, uint256[] memory preview) =
+    dollarStore.previewWithdraw(poolId, receiptAmount);
+
+// Empty minimums accept the calculated basket. To protect each leg, build native
+// minimums from the preview's order; a new hub listing changes the required length.
+uint256[] memory minAmountsOut = new uint256[](0);
+(address[] memory paidAssets, uint256[] memory amounts) =
+    dollarStore.withdraw(poolId, receiptAmount, minAmountsOut, deadline);
+```
+
+The hub pays across its hub assets. A spoke pays its own asset plus its proportional hub allocation.
+Previewing computes amounts; it does not check the caller's balance or whether issuer-controlled
+transfers will succeed. See [Functions](/capabilities/functions#withdraw) for minimums and asset order.
 
 ## Discovering what is listed
 
-Do not hardcode an asset list — read it.
+Resolve the governed asset set at runtime:
 
 ```solidity
-uint256 pools = dollarStore.poolCount();          // index 0 is the hub
+uint256 pools = dollarStore.poolCount(); // Pool IDs include retired pools
 address[] memory hubAssets = dollarStore.getPoolAssets(0);
-bool ok = dollarStore.isAssetListed(token);
-uint16 pool = dollarStore.assetPoolId(token);     // which pool the asset belongs to
+bool listed = dollarStore.isAssetListed(token);
+uint16 pool = dollarStore.assetPoolId(token); // 0 = hub; >= 1 = spoke
 ```
 
-Routes are hub↔hub, hub↔spoke and spoke↔hub. A direct spoke-to-spoke swap reverts with `InvalidRoute` —
-it is composed as two legs through a hub asset. A peripheral router contract is planned to do that in a
-single call on top of the protocol; until it ships, compose the two legs yourself.
+`swapOrQueue` and `swapExactInput` support hub↔hub and hub↔spoke. For two spoke assets, use the atomic
+`swapSpokeToSpoke(offer, want, via, amount, recipient, deadline)` endpoint with an ordered list of hub
+assets. It never queues, and list order can affect fillability. A direct spoke-pair `getSwapQuote`
+returns zero; simulate the routed call. See [Functions](/capabilities/functions#swapspoketospoke).
 
 ## Before you ship
 
-- **Simulate every call.** It is the cheapest way to surface the revert reasons in
-  [Errors](/capabilities/errors).
-- **Handle `InsufficientLiquidity`** on `swapExactInput` — it means route elsewhere, not that something
-  broke.
-- **Handle `OrderTooSmall`** if you use `swap` with a partial floor: a remainder below the queue's
-  minimum reverts the whole call when that queue is not empty.
-- **Do not cache addresses or decimals across networks.** Decimals are frozen per asset at listing, but
-  the asset set is governed and can grow.
-- **Watch `ReservesSynced`** if you hold DLRS or spoke shares — it is the event that marks backing down.
+- **Simulate with the actual caller and recipient.** State can change between simulation and execution;
+  the minimum and deadline still apply when the transaction executes.
+- **Decode the current ABI.** `InsufficientLiquidity` and `MinAmountNotMet` include the output asset
+  and native output amounts; [Errors](/capabilities/errors) covers recovery.
+- **Handle `OrderTooSmall`.** A small queued remainder reverts the whole call unless it opens an empty
+  queue. `swapOrQueue` has no tip argument.
+- **Track refunds by state and events.** A failed first cancellation parks escrow; transaction success
+  alone does not prove the original tokens were returned. See [The queue](/concepts/queue).
+- **Resolve deployment and asset configuration.** Addresses, ABI versions and listing status can differ
+  across networks. Monitor `ReservesSynced` and `EscrowHaircut` for accounting changes.
 
 ## Next steps
 
-- [Functions](/capabilities/functions) — the complete call surface
-- [Errors](/capabilities/errors) — every revert and what to do about it
-- [Time vs Slippage](/concepts/time-tradeoff) — choosing `minAmountOut`
-- [Spokes](/concepts/spokes) — if you are listing an asset or providing liquidity
+- [Functions](/capabilities/functions) — parameters, return values and views
+- [Events](/capabilities/events) — indexing actual execution and queue state
+- [Errors](/capabilities/errors) — protocol and token failures
+- [Spokes](/concepts/spokes) — supplying and exiting spoke liquidity

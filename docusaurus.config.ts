@@ -2,23 +2,31 @@ import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
+// The current public documentation uses .xyz; explicit overrides support other deployments.
+const siteUrl = process.env.SITE_URL ?? (process.env.SITE_VARIANT === 'world'
+  ? 'https://docs.dollarstore.world'
+  : 'https://docs.dollarstore.xyz');
+
 const config: Config = {
   title: 'DollarStore',
   tagline: '1:1 stablecoin swaps',
-  favicon: 'img/favicon.svg',
+  favicon: 'img/favicon.png',
 
   future: {
     v4: true,
   },
 
-  url: 'https://docs.dollarstore.world',
+  url: siteUrl,
   baseUrl: '/',
 
-  organizationName: 'wandering-soupsmith',
+  organizationName: 'coasify',
   projectName: 'dollar-docs',
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  onBrokenAnchors: 'throw',
+  markdown: {
+    hooks: {onBrokenMarkdownLinks: 'throw'},
+  },
 
   i18n: {
     defaultLocale: 'en',
@@ -33,7 +41,7 @@ const config: Config = {
           path: 'content', // Use content folder for docs (docs/ is gitignored for reference)
           sidebarPath: './sidebars.ts',
           routeBasePath: '/', // Docs at root, no /docs/ prefix
-          editUrl: 'https://github.com/wandering-soupsmith/dollar-docs/tree/main/',
+          editUrl: 'https://github.com/coasify/dollar-docs/tree/main/',
         },
         blog: false, // Disable blog
         theme: {
@@ -47,21 +55,21 @@ const config: Config = {
     announcementBar: {
       id: 'protocol-access-notice',
       content:
-        'Protocol use is subject to the <a href="/resources/protocol-terms">Protocol Terms</a> and is not available to U.S. Persons.',
-      backgroundColor: '#111827',
-      textColor: '#f9fafb',
+        'Ethereum mainnet · v1.0.0 — <a href="/resources/addresses">contract addresses</a>. Protocol use is subject to the <a href="/resources/protocol-terms">Protocol Terms</a> and is not available to U.S. Persons.',
+      backgroundColor: '#f8f1e0',
+      textColor: '#7a5a0e',
       isCloseable: false,
     },
     colorMode: {
-      defaultMode: 'dark',
-      disableSwitch: true, // Dark only
+      defaultMode: 'light',
+      disableSwitch: true, // Match the reference site's light palette.
       respectPrefersColorScheme: false,
     },
     navbar: {
-      title: 'dollarstore',
+      title: 'Dollar Store',
       logo: {
-        alt: 'DollarStore Logo',
-        src: 'img/logo.svg',
+        alt: '',
+        src: 'img/dollarstore-mark.png',
       },
       items: [
         {
@@ -71,17 +79,17 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          href: 'https://dollarstore.world',
+          href: 'https://www.dollarstore.xyz',
           label: 'Website',
           position: 'right',
         },
         {
-          href: 'https://app.dollarstore.world',
+          href: 'https://app.dollarstore.xyz',
           label: 'App',
           position: 'right',
         },
         {
-          href: 'https://github.com/wandering-soupsmith/dollar',
+          href: 'https://github.com/coasify/dollar',
           label: 'GitHub',
           position: 'right',
         },
@@ -111,12 +119,12 @@ const config: Config = {
           title: 'Links',
           items: [
             {
-              label: 'dollarstore.world',
-              href: 'https://dollarstore.world',
+              label: 'dollarstore.xyz',
+              href: 'https://www.dollarstore.xyz',
             },
             {
               label: 'GitHub',
-              href: 'https://github.com/wandering-soupsmith/dollar',
+              href: 'https://github.com/coasify/dollar',
             },
           ],
         },
@@ -134,10 +142,10 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Experimental software, not yet deployed. Use at your own risk.`,
+      copyright: `Experimental software. Verify the deployment version before integrating. Network fees and issuer restrictions apply.`,
     },
     prism: {
-      theme: prismThemes.dracula,
+      theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
       additionalLanguages: ['solidity'],
     },

@@ -6,177 +6,212 @@ description: Security considerations and trust assumptions
 
 # Security
 
-:::danger Experimental Software
-The protocol is **not deployed to any network** and has never held funds. It has been reviewed by
-OpenZeppelin (see [Audits](#audits)), but review is not a guarantee of correctness. Use at your own risk.
+:::info Ethereum mainnet
+The proxy reports `1.0.0`. This reference follows
+[`b1668d0`](https://github.com/coasify/dollar/tree/b1668d0835c896e6ec310f51b3598e97cc5e46b0).
+See [Contract addresses](/resources/addresses) for the onchain snapshot and verification limitations.
 :::
+
+The software is experimental. The [OpenZeppelin reports](#audits) cover the code versions identified
+below, rather than every subsequent change. A review does not establish that software is free of defects.
+
+## Mainnet verification status
+
+The role and configuration snapshot on [Contract addresses](/resources/addresses) records a
+**3-hour governor delay** and a **6-hour upgrader delay**, not the governance script defaults of
+7 and 14 days. The guardian and unpauser Safes each read as 2 of 2 in that snapshot; final intended
+ownership and thresholds have not been confirmed.
+
+An earlier bytecode comparison matched the implementation, `SpokeAdminLib` and `SwapRouteLib` to the
+release reference, but found a mismatch for `SpokeLifecycleLib` at
+`0xd55D9474d8fBc3b3883aa1b244cDA06a3e397A5A`. Its exact deployed source/build remains unresolved.
+The reported version and successful execution tests do not establish full source/build equivalence.
 
 ## Trust assumptions
 
-### What you trust
+### Roles and their holders
 
-1. **The upgrader**: a TimelockController that can replace the implementation through a UUPS upgrade.
-   This is the most powerful role — whoever controls it can eventually rewrite every other control. It
-   sits behind the longest delay and can only hand itself off (the governor cannot rotate it).
-2. **The governor**: a TimelockController that lists assets, creates spokes, sets launch caps, sets the
-   price feeds and risk parameters, marks reserves down (`syncReserves`) and sweeps unaccounted tokens
-   (`rescueTokens`). Every governor action carries its timelock delay, which is your exit window.
-3. **The guardian**: a Safe multisig with instant fail-safe brakes only — pause (global, per pool, per
-   asset), force-cancel a queue position back to its owner, tighten a launch cap, and apply an escrow
-   haircut on a balance-impaired asset while its pool is paused. It cannot move funds, repoint an
-   oracle, or upgrade.
-4. **The smart contract code**: reviewed, but not formally verified.
-5. **The price feeds**: Chainlink feeds gate every inflow. A misreporting feed can either block deposits
-   and swaps, or let an off-peg asset in.
-6. **The underlying stablecoins**: the protocol trades at par, so it assumes listed assets hold their peg.
+The contract separates five kinds of authority. The following holders describe the governance
+deployment topology; verify the actual addresses and timelock configuration for the network you use.
+The contract's role checks authorize addresses and do not themselves require a Safe or timelock.
 
-Each role has a two-step transfer (`transfer*` + `accept*`), so a handoff requires the incoming address
-to explicitly accept.
+| Authority | Documented holder | What it can do |
+|-----------|-------------------|----------------|
+| Upgrader | Long-delay TimelockController | Replace the UUPS implementation and initiate its own two-step role transfer |
+| Governor | TimelockController | List assets, create and retire spokes, set caps and reserve floors, configure oracle and probe settings, mark reserves down, rescue unaccounted excess tokens, and replace the guardian or unpauser |
+| Pausers | A permitted set of addresses | Each can pause globally, per pool, or per asset; cannot lift a pause or change the pauser list |
+| Unpauser | Safe multisig | Lift pauses and add or remove pausers immediately |
+| Guardian | Safe multisig | Lower launch caps and apply an eligible escrow haircut; cannot pause, unpause, force-cancel a queue position, change a feed, or upgrade |
 
-### What you don't need to trust
+The upgrader is the most powerful authority: replacement code can change the other controls.
+The governor cannot rotate the upgrader. Governor, guardian and upgrader transfers require the incoming
+address to accept; the governor initiates guardian replacement. The governor replaces the unpauser
+with `setUnpauser`, without an acceptance step. The unpauser manages pausers with `setPauser`.
 
-1. **Pricing**: every swap is 1:1 in normalized units. There is no curve, no discretion, no slippage and
-   no fee, so there is no price for anyone to set against you.
-2. **Governance tokens**: there is no token, no voting, no treasury.
-3. **Exits**: `withdraw`, `redeemSpoke` and `cancelQueue` are exit paths and are **not** blocked by
-   pause. A paused protocol still lets you out.
-4. **Queue ordering**: strict FIFO per directed queue, enforced on-chain. Reserves are not handed to a
-   later swapper ahead of an earlier queued position.
+A separate **veto Safe** holds cancellation authority on both timelocks in the deployment script. It
+has no DollarStore role. Each proposer also retains cancellation rights on its own timelock;
+execution is open after the delay. The script separates the guardian from veto and proposer Safes on
+Ethereum mainnet. Publish the actual holder configuration rather than assuming a guardian can veto.
 
-## Governance parameters
+### Other dependencies
 
-These are the values the protocol is intended to launch with. They are not yet set on-chain — read the
-live values with `pegTolerance()`, `maxStaleness()` and the timelocks' own `getMinDelay()` once deployed,
-and treat this table as intent until then.
+- **Price feeds:** Chainlink feeds check offered assets on inflow. Incorrect or stale data can block
+  an inflow or allow an off-peg asset in.
+- **Stablecoin issuers:** swaps use nominal parity in normalized units. Issuers can restrict transfers,
+  freeze addresses, or change token behavior independently of the protocol.
+- **Code and upgrades:** current behavior depends on the implementation behind the proxy. Historical
+  reports do not cover changes made after their reviewed versions.
 
-| Parameter | Intended value | Why |
-|-----------|----------------|-----|
-| Upgrader timelock delay | 7 days | Upgrades are the highest-impact action, so they get the longest exit window |
-| Governor timelock delay | 48-72 h to start, raised over time | Long enough to be a real exit window, short enough to stay operational |
-| Guardian | Safe multisig, 3-of-5 | Instant brakes need availability, but never unilateral control |
-| Peg tolerance | 0.5% (50 bps) | Contract default; the governor can set 0.01%-5% |
-| Max oracle staleness | 1 hour | Contract default; the governor can set up to 24 h |
+### Programmed behavior
 
-What makes the delays meaningful is what sits behind each timelock: the **proposer** is a Safe multisig
-(a timelock proposed by a single key is theater), **execution is open** so it does not depend on any one
-signer being around after the delay, and the guardian Safe holds **cancel** rights so a mistaken or
-malicious queued proposal can be aborted.
+- **Swap pricing:** swaps use 1:1 normalized parity with no pricing curve or protocol fee.
+  Rounding, liquidity, queue order and the caller's native-token minimum still matter.
+- **Receipts:** DLRS and spoke receipts are non-transferable accounting records, with no governance
+  voting or protocol yield.
+- **Exits:** `withdraw` and owner-only `cancelQueue` are not blocked by pause. A transfer restriction,
+  issuer probe, reserve shortfall or other transaction condition can still prevent completion.
+- **Queue order:** reserve settlement follows FIFO on each directed, pool-scoped queue. A position
+  whose owner cannot be paid is parked so the active queue can advance.
+
+## Defaults and deployment configuration
+
+Contract initialization defaults and deployment-script defaults are different from live configuration.
+Read `pegTolerance()`, `maxStaleness()` and each timelock's `getMinDelay()` on the intended deployment.
+
+| Setting | Default or bound | Where it is set |
+|---------|------------------|-----------------|
+| Upgrader delay | 14 days by default | Governance deployment script; configurable at deployment |
+| Governor delay | 7 days by default | Governance deployment script; configurable at deployment |
+| Safe owners and thresholds | Deployment-specific | Publish and verify the actual Safe configuration |
+| Peg tolerance | 50 bps (0.5%) initially; allowed 1–500 bps | Contract initialization; governor can change it |
+| Maximum oracle age | 90,000 seconds (25 hours) initially; allowed above zero through 3 days | Contract initialization; governor can change it |
+
+The 25-hour oracle window allows margin beyond a 24-hour feed heartbeat. Configure a deployment using
+the feeds actually listed there, and distinguish the permitted ceiling from the value in use.
 
 ## During an incident
 
-Incidents are handled in two moves, deliberately split by speed.
+1. **A pauser pauses** the affected asset, pool, or the whole protocol immediately.
+2. **The governor fixes the cause** through its configured timelock, for example by repointing a feed
+   or reconciling recorded reserves. A code change instead uses the upgrader timelock. While the
+   asset's pool is paused, the guardian can haircut impaired queued and parked escrow if the
+   contract's shortfall conditions are met.
+3. **The unpauser lifts the pause** after the response. Neither a pauser nor the guardian can do this
+   by virtue of that role.
 
-1. **The guardian pauses instantly** — globally, per pool, or per asset. This blocks inflows only.
-2. **The governor fixes the cause through its timelock** — repoint a broken feed, adjust tolerance, mark
-   reserves down, sweep stray tokens — then unpauses. A code fix goes through the upgrader timelock
-   instead.
+For a deprecated feed, a pauser can stop the asset's inflows, the governor can update `setPriceFeed`
+after its timelock, and the unpauser can reopen the asset.
 
-For example, if a Chainlink feed is deprecated: the guardian pauses that asset immediately, the governor
-schedules `setPriceFeed`, and after the delay it executes and the asset is unpaused.
+### What pauses block
 
-### What you can still do while paused
+| Pause | Blocked operations | Operations left open by that pause |
+|-------|--------------------|------------------------------------|
+| Global | Deposits, `swapOrQueue`, `swapExactInput`, `swapSpokeToSpoke`, and `processQueue`; quotes return zero | `withdraw`, `cancelQueue` |
+| Per asset | Deposits or swaps offering the asset, routed swaps using it, and queue processing on lines offering it | Payouts of that asset, `withdraw`, `cancelQueue` |
+| Spoke pool | Deposits into the spoke, swaps touching it in either direction, and queue processing on its lines | `withdraw`, `cancelQueue` |
+| Hub pool | Hub deposits, hub-asset deposits into spokes, swaps offering a hub asset, spoke-to-spoke routing, and queue processing offering a hub asset | Spoke-to-hub pair swaps paying hub assets out, `withdraw`, `cancelQueue` |
 
-Exits are never blocked by pause. Whatever the state of the protocol:
+These are pause checks, rather than a promise of successful execution. Other route, issuer, balance and
+minimum-output checks continue to apply.
 
-| Action | Blocked by pause? |
-|--------|-------------------|
-| `withdraw` — burn DLRS or spoke shares for an asset | **No** |
-| `redeemSpoke` — proportional spoke exit | **No** |
-| `cancelQueue` — take your escrowed offer asset back | **No** |
-| `deposit` | Yes |
-| `swap` / `swapExactInput` | Yes |
-| `processQueue` | Yes |
+## Exit and queue delivery
 
-A per-asset deposit pause is narrower still: it stops that asset from flowing *in* — as a deposit, as a
-swap's offer, or as a queue settlement — while withdrawals of it keep working. This is the intended
-response to a depeg: stop absorbing the asset at par, without trapping anyone holding it.
+### Proportional withdrawals and issuer checks
 
-The one thing pause cannot give back is liquidity. If reserves are empty, exits in that specific asset
-still wait on reserves arriving, the same as at any other time.
+`withdraw(poolId, receiptAmount, minAmountsOut, deadline)` burns the caller's DLRS or spoke shares and
+pays a proportional basket. Hub exits pay hub assets; spoke exits pay the spoke asset plus the spoke's
+proportional hub-asset basket. There is no selected-asset withdrawal or separate `redeemSpoke` endpoint.
+Use `previewWithdraw` to obtain the asset ordering and native-token amounts before choosing minimums.
+
+A positive payout uses the token's transfer controls. A zero payout is checked with a zero-value
+transfer to the caller unless the governor has exempted that asset with `setProbeExempt`. A failed
+probe raises `ExitBlockedByIssuer`; a failed real transfer also reverts the withdrawal. The probe
+depends on the token checking recipients even for zero amounts. It does not detect every kind of
+issuer restriction. A preview calculates the basket without testing these transfer permissions.
+
+The governor can change probe exemptions through its configured timelock. Exemption removes the
+zero-value check, while a real payout still uses the token's own transfer controls. See the repository's
+[issuer-control notes](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/SECURITY.md#exit-probe-and-issuer-transfer-controls)
+for token-listing considerations.
+
+### Parked escrow and cancellation
+
+If paying a queued owner fails, the position moves outside the active FIFO queue to a parked line.
+Its original offered-token escrow and ownership stay unchanged; no DLRS or spoke receipts are minted.
+It will not automatically resume filling. The owner can retry `cancelQueue` once that token can be
+returned to them.
+
+If an active position's cancellation cannot refund its owner, that first attempt parks it. If an
+already parked position still cannot refund, cancellation reverts `EscrowTransferFailed`. A successful
+transaction that emits `QueueParked` therefore does not confirm a refund; look for `QueueCancelled`.
+Use `isQueuePositionParked` and `getUserQueuePositions` to track retained escrow.
 
 ## Security measures
 
-### In the contract
-
-- **ReentrancyGuard**: all state-changing entrypoints are protected.
-- **SafeERC20**: safe token transfer handling; fee-on-transfer tokens are rejected outright.
-- **Layered pause**: global, per pool, and per asset (deposits/inflows). Exits stay open in all three.
-- **Oracle peg checks**: every inflow verifies the asset is on peg (default tolerance 0.5%) and the feed
-  is fresh (default max staleness 1 hour). Both parameters are governor-set and bounded.
-- **Launch caps**: per-pool exposure ceilings. The governor sets them; the guardian can only tighten.
-- **Two-step role transfers**: for upgrader, governor and guardian.
-- **Checks-effects-interactions**: state changes before external calls.
-- **ERC-7201 namespaced storage**: append-only across upgrades, so an upgrade cannot silently reinterpret
-  existing state.
-- **Blacklist resilience**: if paying a queued owner fails (for example a token blacklist), the position
-  is ejected and its escrow converted into the canonical receipt (DLRS on the hub, spoke shares on a
-  spoke) instead of bricking the queue.
+- **Reentrancy guard:** protects token-moving entrypoints and relevant accounting and registry
+  operations. Role and pause setters have their own authority checks.
+- **Token accounting:** SafeERC20 handles token transfers; inflows reject receiving less than
+  the amount pulled, including fee-on-transfer behavior.
+- **Oracle limits:** inflows check peg and freshness against bounded governor-set parameters. Feed
+  calls have a 100,000-gas budget; failed reads are treated as unhealthy.
+- **Launch caps:** deposits check their pool's cap. The governor configures caps; the guardian can
+  only lower them. A zero cap is uncapped.
+- **Storage layout:** ERC-7201 namespaces organize state. Future upgrades must preserve existing
+  field order and types; namespacing does not enforce compatibility by itself.
+- **Impairment accounting:** governor-only `syncReserves` reduces recorded reserves to the actual
+  balance after subtracting escrow. Guardian-only `haircutEscrow` can proportionally reduce queued
+  and parked escrow when its pool is paused and the required shortfall exists. Neither mints value;
+  `rescueTokens` is limited to unaccounted excess above reserves and escrow.
 
 ### Queue protections
 
-- **Max 150 positions per directed queue**: bounded gas costs.
-- **Minimum order scaling**: $500 base, growing 10x every 25 positions, to prevent dust spam.
-- **FIFO ordering**: no manipulation of queue order.
-- **Bounded settlement**: a swap or deposit settles at most 8 queued positions inline, so no single
-  transaction can be forced to walk an arbitrarily long queue.
+- Each active directed queue has a maximum of 150 positions.
+- The queued-order minimum starts at 500 normalized dollars and grows tenfold every 25 active
+  positions. An empty line permits a smaller remainder; parked positions do not set its minimum.
+- Same-direction reserve settlement visits at most eight positions per line in an automatic pass,
+  counting positions it parks. Opposite-queue matching is separate; a spoke deposit can visit several
+  eligible lines, each with its own eight-position bound. A hub deposit does not automatically settle
+  queues. `processQueue` takes the caller's visit budget.
 
 ## Audits
 
-Two OpenZeppelin reports:
+The published OpenZeppelin reports identify these historical review versions:
 
-- **[Report #01](/audits/dollarstore-openzeppelin-audit-01.pdf)** — the pre-v3 single-pool protocol.
-  Findings fixed, including depeg protection and queue blacklist resilience.
-- **[Report #02](/audits/dollarstore-openzeppelin-audit-02.pdf)** — the v3 upgradeable hub-and-spoke
-  rebuild: two mediums, two lows, four notes. Fixed: FIFO settlement before reserve fills (M-01),
-  consistent `minAmountOut` units (L-01), and the notes. Acknowledged by design and not changed: the peg
-  check applies to inflows only (M-02), and the frozen reserve redemption race (L-02).
+| Report | Report date | Audited commit | Fix-review commit |
+|--------|-------------|----------------|-------------------|
+| [Report #01](/audits/dollarstore-openzeppelin-audit-01.pdf), pre-v3 single-pool protocol | March 10, 2026 | `091852e` | `591a4ac` |
+| [Report #02](/audits/dollarstore-openzeppelin-audit-02.pdf), v3 hub-and-spoke rebuild | August 5, 2026 | `d4cea9a` | `5e2e241` |
 
-Review coverage is not the same as safety, and the reviewed code has not run in production.
+These reports do not establish a review of the entire `1.0.0` release reference at `b1668d0`. Consult the reports for the
+scope and status of individual findings and the
+[repository audit index](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/audits/README.md)
+for commit provenance. The reports use the old `contracts/src/` paths; current source lives in `src/`.
 
-## Known limitations
+## Operational limitations
 
-### Peg checks apply to inflows only
+Peg checks apply to inflows, not payouts. Liquidity can be exhausted even at nominal swap parity;
+`swapOrQueue` can queue a remainder, while `swapExactInput` and `swapSpokeToSpoke` fill completely or
+revert. Quotes estimate delivery assuming queued-owner transfers succeed, and do not check the
+caller or recipient's token-transfer permissions. Simulate the exact call with its intended recipient.
 
-An asset trading above par can be taken out at par. That is ordinary arbitrage on a par-value exchange
-and is peg-restoring; the harmful direction — a below-par asset entering and displacing good reserves —
-is what the inflow check and the guardian deposit pause block. Deliberate, so withdrawals never depend
-on a live oracle.
+Spoke receipts expose their holder to the pool's assets and issuer restrictions. Withdrawals return the
+pool's current mix, and losses can prevent the nominal amount from being recovered. The swap reserve
+floor does not block a proportional withdrawal. Cancellation remains owner-only and subject to the
+offered token's ability to transfer.
 
-### Liquidity can be depleted
+An implementation upgrade can change the protocol's behavior. Monitor the actual upgrader timelock
+and the version reported by the proxy, rather than relying on documentation of a different deployment.
 
-If everyone wants the same asset, its reserve empties and users queue. This is by design — the tradeoff
-is time, not price.
+## Vulnerability reports
 
-### `swapExactInput` has no partial-fill mode
-
-The router function either fills completely or reverts. No slippage protection is needed at a 1:1 rate,
-but liquidity can be consumed between the quote and the execution.
-
-### Spoke liquidity providers carry issuer risk
-
-An LP in a spoke pool is exposed to the issuer of that spoke's asset. The protocol offers no
-compensation for that exposure and does not whitelist depositors.
-
-### Oracle dependency
-
-A deprecated or broken feed blocks every inflow of that asset until the governor repoints it through the
-timelock. The guardian can pause immediately in the meantime.
-
-### Upgradeability
-
-The implementation can be replaced. The delay is the protection, not immutability — watch the upgrader
-timelock if that matters to you.
-
-## Bug bounty
-
-No formal bug bounty program exists yet. Report suspected vulnerabilities privately to
-**admin@dollarstore.world**, and please do not disclose publicly until a fix has been deployed.
+Report suspected vulnerabilities privately to **admin@dollarstore.world**. Please do not disclose
+publicly until a fix has been deployed.
 
 ## Recommended practices
 
-1. **Start small**: test with small amounts first
-2. **Verify addresses**: always verify contract addresses from official sources, and call the proxy, not
-   the implementation
-3. **Check `version()`**: once deployed, confirm the implementation matches the surface you integrated against
-4. **Monitor positions**: watch queue positions for fills
-5. **Understand the risks**: this is experimental software
+1. Verify the network, proxy, implementation version and role holders against the
+   [deployment record](/resources/addresses).
+2. Use the proxy with the ABI for its verified version.
+3. Preview basket exits and simulate transactions with the intended caller, receiver or recipient.
+4. Track queued and parked positions separately, including updates after an escrow haircut.
+5. Begin with small amounts and review pending governance operations before relying on a deployment.

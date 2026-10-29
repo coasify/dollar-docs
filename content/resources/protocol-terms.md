@@ -6,7 +6,12 @@ description: Dollar Store protocol end-user terms and conditions
 
 # Dollar Store Protocol End-User Terms & Conditions
 
-**Last Updated: August 26, 2026**
+**Last Updated: October 23, 2026**
+
+**Technical version described:** the `1.0.0` interface at
+[`b1668d0`](https://github.com/coasify/dollar/tree/b1668d0835c896e6ec310f51b3598e97cc5e46b0).
+This version description does not establish the version running on any network. Verify a deployment
+against [Contract addresses](/resources/addresses) before using its interface.
 
 ## Important Notice
 
@@ -43,13 +48,13 @@ in a Spoke Pool, as described in Section 6.6.
 **"Supported Asset"** means a digital asset that the Protocol's code recognizes for deposit,
 withdrawal, or swap at the relevant time, as reflected in the on-chain configuration.
 
-**"DLRS"** means the accounting entry by which the Protocol's code records the amount a User has
-deposited into the Hub Pool and not yet withdrawn. DLRS is a bookkeeping record, not a transferable
-token, as described in Section 7.
+**"DLRS"** means the accounting entry by which the Protocol's code records a Hub Pool deposit for its
+designated receiver, reduced when that receiver withdraws. DLRS is a bookkeeping record, not a
+transferable token, as described in Section 7.
 
 **"Impairment Event"** means any circumstance in which the Protocol's actual balance of a Supported
-Asset is less than the amount the Protocol has recorded as reserves and queued funds for that asset,
-including as a result of a freeze, seizure, clawback, or other action by the asset's issuer.
+Asset is less than the amount the Protocol has recorded as reserves and queued or parked escrow for
+that asset, including as a result of a freeze, seizure, clawback, or other action by the asset's issuer.
 
 **"Timelock"** means a programmed, publicly visible on-chain delay between the proposal of an action and
 the earliest time it can take effect.
@@ -66,8 +71,8 @@ are not controlled by Buckets.
 **"Effective Date"** means, as to you, the date on which you first accept these Terms under Section 5.1
 or first access or use the Protocol, whichever is earlier. A revised version of these Terms becomes
 effective as to you on your first acceptance or use after that version takes effect under Section 14.
-References to the Implementation in effect as of the Last Updated date refer to the version of the
-Protocol's code that these Terms describe.
+Technical descriptions of the Implementation refer to the code version identified above. They do not
+establish which Implementation is deployed on a particular network.
 
 **"U.S. Person"** means: (a) any natural person resident in the United States; or (b) any partnership,
 corporation, limited liability company, or other entity organized or incorporated under the laws of the
@@ -93,9 +98,8 @@ by the smart contracts themselves and move only as the code provides, and you re
 of your wallet and private keys at all times. No person acts as your counterparty, agent, broker,
 dealer, exchange, money transmitter, custodian, fiduciary, or advisor, and no services are provided to
 you through the Protocol. Transactions are final and irreversible except to the extent the Protocol's
-own programmed rules provide otherwise. Descriptions of the Protocol in these Terms refer to the
-Implementation in effect as of the Last Updated date. Section 4 describes how the Implementation can
-change.
+own programmed rules provide otherwise. Technical descriptions of the Protocol in these Terms refer
+to the code version identified above. Section 4 describes how the Implementation can change.
 
 ## 3. Role of Buckets, LLC
 
@@ -135,21 +139,24 @@ responsible for monitoring pending updates, and the on-chain record is authorita
 The code includes a limited set of administrative functions (approval of updates, configuration of
 operational parameters including which assets the Protocol supports, under published listing criteria,
 and protective actions such as pausing new deposits and swaps or tightening exposure limits) each held
-by a designated role and constrained by limits written into the code. Functions that change the rules or
-economics of the Protocol take effect only after a Timelock. Functions that act immediately run only in
-the protective direction. The current roles, their limits, and their Timelocks are described in the
-Protocol's public documentation and recorded on-chain, which are incorporated in these Terms by
-reference. Certain reconciliation functions described in Section 6.4 are limited to conforming the
-Protocol's records to actual balances following an external event and cannot create value or redirect
-value to any person. No administrative function can transfer user balances or queued funds to any person
+by a designated role and constrained by limits written into the code. In the documented governance
+configuration, implementation updates and governor actions use their respective Timelocks. Pausers may
+pause immediately, and the guardian may immediately tighten caps or apply an eligible escrow haircut.
+The separate unpauser may immediately lift pauses and add or remove pausers; governor replacement of
+the unpauser uses the governor's Timelock. The roles, their limits, and their configured Timelocks are
+described in the Protocol's public documentation and recorded on-chain, which are incorporated in these
+Terms by reference. Certain reconciliation functions described in Section 6.4 are limited to conforming
+the Protocol's records to actual balances following an external event and cannot create value or
+redirect value to any person. No administrative function can transfer user balances or queued funds to any person
 other than their owner, apply any exchange rate other than the programmed 1:1 parity, impose a protocol
 fee or collect any payment through the Protocol, reorder individual queue positions, or block your
-withdrawals or the cancellation of your own queued positions. The only administrative actions that
-affect a user's position are the reconciliation adjustments following an Impairment Event described in
-Section 6.4. Pauses and caps restrict new deposits, swaps, and queue processing only. Withdrawals and
-cancellations are never pausable, though they may fail in practice for lack of reserves, an issuer
-restriction, an Impairment Event, or network conditions. No role-holder owes you any duty to exercise or
-refrain from exercising any administrative function. These are protective capabilities of the software,
+withdrawals or the cancellation of your own queued positions through a pause. Reconciliation
+adjustments following an Impairment Event are described in Section 6.4. Governance may also change the
+issuer-probe exemption described in Section 6.3. Pauses restrict deposits, swaps, and queue processing
+according to their scope; launch caps limit deposits. Withdrawals and cancellations are never pausable,
+though they may fail in practice for lack of reserves, an issuer restriction or probe, an Impairment
+Event, or network conditions. No role-holder owes you any duty to exercise or refrain from exercising
+any administrative function. These are protective capabilities of the software,
 not services, and no assurance is given that they will be exercised in any circumstance.
 
 ## 5. Assent; Eligibility; Prohibited Persons
@@ -196,47 +203,71 @@ blacklist applicable to you or to any asset.
 
 ### 6.1 Deposits, Withdrawals, and Asset Substitution
 
-You may deposit a Supported Asset into the Hub Pool. The code records the deposit as an accounting entry
-(DLRS) against your address in the nominal amount deposited, subject to rounding that never permits
-extraction of value from the Hub Pool, oracle checks, pauses, and caps. You may withdraw Supported
-Assets up to your recorded amount, which the code reduces accordingly, subject to available reserves.
-THE PROTOCOL MAY DELIVER A DIFFERENT SUPPORTED ASSET THAN THE ASSET YOU DEPOSITED OR REQUESTED,
-ACCORDING TO ITS PROGRAMMED RULES AND THE COMPOSITION OF RESERVES AT THE TIME OF WITHDRAWAL, and you
-accept that risk.
+You may deposit a Supported Asset into the Hub Pool. The code pulls assets from the caller and records
+the deposit as an accounting entry (DLRS) for the designated receiver, subject to rounding, oracle
+checks, pauses, and caps. A caller may fund a deposit for another receiver; the resulting entry belongs
+to that receiver, cannot be transferred, and can be withdrawn only by its owner. A receiver that cannot
+call the withdrawal function may be unable to access that entry.
+
+Withdrawal burns the amount of DLRS specified by its owner and pays a proportional basket of Hub Pool
+reserves in the assets and native-token amounts calculated by the code. You do not select a single
+withdrawal asset. You may preview the basket and specify a minimum for each returned asset, in the
+order returned by the preview, or accept the calculated basket without individual minimums. The
+transaction remains subject to reserves, rounding, issuer transfer controls, and the other code
+conditions. THE WITHDRAWAL BASKET MAY INCLUDE DIFFERENT SUPPORTED ASSETS THAN YOU DEPOSITED, ACCORDING
+TO THE COMPOSITION OF RESERVES AT THE TIME OF WITHDRAWAL, and you accept that risk.
 
 ### 6.2 Swaps and Queues
 
-You may swap one Supported Asset for another at the programmed 1:1 rate. The Protocol provides no price
-discovery, price improvement, or slippage. A swap first matches against the opposite queue, then draws
-on available reserves, and any remainder joins a first-in, first-out queue for the requested asset that
-any person may process against available reserves. Minimum order sizes scale with queue depth. NO
-ASSURANCE IS GIVEN THAT ANY QUEUED POSITION WILL BE FILLED, WITHIN ANY PERIOD OR AT ALL. Queued funds
-are held by the smart contracts, not by any person. You may cancel your own queued position at any time,
-including during a pause, and your queued funds are returned to your address. No other person can cancel
-your position. No compensation is payable in respect of any cancellation.
+You may swap one Supported Asset for another at the programmed 1:1 rate in normalized units, subject to
+rounding and liquidity. The Protocol provides no price discovery or price improvement. The
+`swapOrQueue` function first matches against the opposite queue, then may draw on available reserves
+after older same-direction positions have been settled, and queues any remainder in a first-in,
+first-out line for the directed pair and pool. Any person may process eligible active queues against
+available reserves. Minimum order sizes scale with active queue depth. The immediate output and any
+queued position belong to the caller. The `swapExactInput` and `swapSpokeToSpoke` functions instead
+fill completely or revert, never queue, and pay their designated recipient. The spoke-to-spoke function
+uses the caller's ordered list of hub assets for routing.
+
+NO ASSURANCE IS GIVEN THAT ANY QUEUED POSITION WILL BE FILLED, WITHIN ANY PERIOD OR AT ALL. Queued and
+parked funds are held by the smart contracts, not by any person. You may attempt to cancel your own
+queued or parked position at any time, including during a pause, to recover the remaining escrowed
+offer asset to your address. A refund can fail under Section 6.3; transaction success alone does not
+establish that a refund occurred. No other person can cancel your position. No compensation is payable
+in respect of any cancellation.
 
 ### 6.3 Issuer Actions and Failed Deliveries
 
 Supported Assets are liabilities of third-party issuers, and those issuers can freeze, blacklist, pause,
-or otherwise restrict addresses or transfers at any time, independently of the Protocol. If an outbound
-delivery on a queue settlement or on the refund of a position you cancel fails (for example because the
-receiving address has been restricted by the asset's issuer), the code records the undelivered amount
-as an accounting entry (DLRS) for the recipient in place of the failed delivery. Ordinary withdrawals
-have no such fallback: a withdrawal whose transfer fails reverts and your recorded entry is unchanged.
-An entry so recorded is subject to these Terms in all respects, including Section 5 and the substitution
-rule of Section 6.1. The Protocol cannot reverse, and no person will intervene in, issuer-level actions,
-and nothing in these Terms entitles any person subject to sanctions or issuer-level restrictions to
-receive any asset.
+or otherwise restrict addresses or transfers at any time, independently of the Protocol. If a queued
+owner cannot be paid, the position is parked outside the active queue, with its original offered-token
+escrow and ownership retained. No DLRS or Receipt Shares are created in place of that delivery. Parked
+positions do not automatically resume filling. The owner may retry cancellation once the token permits
+a refund. A first failed refund parks an active position; a failed refund of an already parked
+position reverts and leaves its escrow in place.
+
+Withdrawals pay a proportional basket. A positive payment uses the relevant token's transfer controls;
+a basket leg that pays zero is checked by a zero-value transfer to the caller unless the governor has
+exempted that asset. The probe depends on the token applying its controls to zero-value transfers and
+does not detect every issuer restriction. Governance may change an asset's probe exemption through its
+configured Timelock; actual payouts remain subject to the token's transfer controls. A failed transfer
+or required probe reverts the withdrawal, leaving the owner's recorded entry unchanged. A preview does
+not test these issuer permissions. The Protocol cannot reverse, and no person will intervene in,
+issuer-level actions, and nothing in these Terms entitles any person subject to sanctions or
+issuer-level restrictions to receive any asset.
 
 ### 6.4 Impairment
 
 If an Impairment Event occurs, the Protocol's records will overstate what the smart contracts actually
-hold. Reconciliation functions in the code, which a configured administrative role may trigger, which
-execute only when the shortfall is verifiable on-chain, and which cannot create value or move value to
-any person, reduce the recorded reserves of the affected asset to the actual balance and, while the
-affected pool is paused, reduce queued positions offering that asset pro rata, removing positions that
-round to zero. Recorded entries are not reduced. The Hub Pool may therefore hold less than the aggregate
-of recorded entries, and withdrawal of the full recorded amount may be unavailable in the impaired asset
+hold. Reconciliation functions in the code are restricted to configured administrative roles and
+execute only when the shortfall is verifiable on-chain and the code's other conditions are met. The
+governor may reduce recorded reserves of the affected asset to the actual balance after subtracting
+escrow. While the affected pool is paused, the guardian may reduce queued and parked positions
+offering that asset pro rata to fit the balance remaining beyond reserves, removing positions that
+round to zero. These functions cannot create value or move value to any person. DLRS entry amounts and
+Receipt Share counts are not reduced by those functions, although the value available for withdrawal
+may be reduced. The Hub Pool may therefore hold less than the aggregate of recorded entries, and
+withdrawal of the full recorded amount may be unavailable in the impaired asset
 or at all. Tokens held by the smart contracts in excess of recorded reserves and queued funds are not
 user balances or queued funds and may be swept by a configured administrative role, only to the extent
 of the excess, to an address it designates. No compensation is payable in respect of any reduction, and
@@ -254,15 +285,24 @@ the Protocol controls.
 
 Spoke Pools may be created through the administrative functions described in Section 4.2, each pairing
 one Supported Asset with an internal allocation of Hub Pool value. Swaps between a Spoke Pool's asset
-and a Hub Pool asset execute at the programmed 1:1 rate against the Spoke Pool's reserves, and unfilled
-remainders queue under Section 6.2. Through the same functions, a Spoke Pool may be given a
-minimum-reserve parameter that limits swaps but never redemptions, may be placed into wind-down (no new
-liquidity, with redemptions remaining open), may be removed once fully drained, and may be paused under
-Section 4.2. A person who supplies liquidity to a Spoke Pool is credited with non-transferable Receipt
-Shares proportional to the value supplied. Receipt Shares are a bookkeeping record, not tokens, bear no
-fee or yield, and may be realized only through the Protocol's programmed redemption functions for the
-holder's proportional share of the Spoke Pool's value, subject to available reserves. THE VALUE OF
-RECEIPT SHARES IS NOT FIXED, CANNOT EXCEED THE VALUE SUPPLIED, AND MAY DECLINE, INCLUDING FOLLOWING AN
+and a Hub Pool asset use programmed 1:1 normalized parity and the Spoke Pool's available liquidity,
+with queueing or full-fill behavior determined by the endpoint under Section 6.2. Dedicated
+spoke-to-spoke swaps route through the caller's ordered hub-asset list and never queue. Through the same
+functions, a Spoke Pool may be given a minimum-reserve parameter that limits swaps but never
+withdrawals, may be placed into wind-down (no new
+liquidity, with withdrawals remaining open), may be removed once its spoke-asset reserve and internal
+Hub Pool allocation are zero, and may be paused under Section 4.2. Worthless shares and queued or
+parked positions may remain recorded after removal; those positions stop filling but remain
+owner-cancellable under Section 6.3. A later registration of the same asset uses a new pool identifier
+and does not revive those positions.
+
+A deposit into a Spoke Pool credits non-transferable Receipt Shares to the designated receiver,
+proportional to the value supplied under the share calculation. The depositor may be a different
+address from the receiver. Receipt Shares are a bookkeeping record, not tokens, bear no fee or yield,
+and may be realized only by their owner through the Protocol's withdrawal function. The payout is the
+holder's proportional basket of the spoke asset and underlying Hub Pool assets, subject to available
+reserves and the issuer checks described in Section 6.3. THE VALUE OF RECEIPT SHARES IS NOT FIXED,
+CANNOT EXCEED THE VALUE SUPPLIED, AND MAY DECLINE, INCLUDING FOLLOWING AN
 IMPAIRMENT EVENT OR WIND-DOWN. Section 7 applies to Receipt Shares as it applies to DLRS, except that
 the 1:1 bookkeeping convention described for DLRS does not. A regulator could characterize Receipt
 Shares differently from DLRS.
@@ -273,14 +313,16 @@ Shares differently from DLRS.
 
 DLRS is the name of the accounting entry by which the Protocol's code keeps track of deposits into the
 Hub Pool. It is a bookkeeping record, not an asset. It is recorded by a non-transferable on-chain
-contract that exposes balances. The code increases the entry recorded against your address when you
-deposit, reduces it when you withdraw, and may record one under Section 6.3, in each case exclusively as
-the code provides and without discretion by any person. It is not a coin, a transferable token, or an
+contract that exposes balances. The code increases the entry recorded against the designated
+receiver's address when a caller funds a Hub Pool deposit, and reduces it when that owner withdraws,
+in each case exclusively as the code provides and without discretion by any person. A failed queue
+payment under Section 6.3 does not create an entry. It is not a coin, a transferable token, or an
 instrument. The code contains no capability to transfer, pledge, or deliver an entry to any other
 address, and that limitation is structural, not a policy. No person issues or is liable on an entry,
 and no person is obligated to pay or deliver anything in respect of it. The only effect of an entry is
 that the Protocol's programmed withdrawal function will, subject to reserve sufficiency and the other
-conditions of these Terms, deliver Supported Assets up to the recorded amount, in any Supported Asset.
+conditions of these Terms, burn the owner's specified entry amount and deliver the code-calculated
+proportional basket of Supported Assets described in Section 6.1.
 Any nominal 1:1 relationship is a bookkeeping convention, not an entitlement to a fixed amount of
 monetary value against any person.
 
@@ -309,7 +351,7 @@ Protocol or these Terms is an offer of a payment stablecoin to any person.
 
 ### 8.1 No Protocol Fees
 
-The Implementation in effect as of the Last Updated date imposes no protocol fee on deposits,
+The Implementation version identified above imposes no protocol fee on deposits,
 withdrawals, or swaps, collects no tip or priority payment, and applies only the programmed 1:1 parity
 between Supported Assets. Fee properties could change in a future Implementation only through the
 timelocked software-update mechanism described in Section 4, with the notice and exit rights described
@@ -349,15 +391,18 @@ to exit before effectiveness.
 frozen or blacklisted at the address level, or fail entirely, and the Protocol cannot reverse issuer
 actions.
 
-**Asset-substitution risk.** You may receive a different Supported Asset than you supplied or requested.
+**Asset-substitution risk.** A withdrawal pays the programmed reserve-composition basket and may
+include Supported Assets other than those you supplied.
 
 **Queue and liquidity risk.** Queued positions may be partially filled, filled after long delay,
-cancelled, or never filled.
+parked, cancelled, or never filled. Parked escrow cannot resume filling automatically, and a refund may
+remain blocked by the offered token's transfer restrictions.
 
 **Impairment and adjustment risk.** If an issuer or other external event reduces what the smart
-contracts actually hold, the code's reconciliation rules will write recorded reserves down and reduce
-queued positions in the affected asset pro rata or remove them, permanently reducing what you can
-recover. Any person may trigger those rules once the shortfall exists.
+contracts actually hold, the governor may write recorded reserves down and the guardian may reduce
+queued and parked positions in the affected asset pro rata or remove them, subject to the conditions
+in Section 6.4, permanently reducing what you can recover. Only the respective configured role may
+trigger each function; no person is obligated to do so.
 
 **Regulatory risk.** Laws and regulations, including stablecoin, money-transmission, sanctions, and
 market-structure regimes such as MiCA, may change, may restrict Protocol functionality or the

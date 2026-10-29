@@ -1,13 +1,13 @@
 ---
 sidebar_position: 2
 title: Functions
-description: Function reference for the DollarStore 0.11.0 interface
+description: Function reference for the DollarStore 1.0.0 interface
 ---
 
 # Functions
 
-This page describes the upcoming **0.11.0** interface at
-[`ae25d5a`](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/src/interfaces/IDollarStore.sol).
+This page describes the **1.0.0** interface at
+[`b1668d0`](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/src/interfaces/IDollarStore.sol).
 Confirm a matching release and proxy in [Addresses](/resources/addresses).
 
 *Native* amounts use the named token's own decimals. *Normalized units* use six decimals. A spoke
@@ -238,7 +238,7 @@ uint256 output = dollarStore.getSwapQuote(hubAsset, wantAsset, hubOutput);
 Equality to full native output indicates enough estimated liquidity assuming payments succeed.
 Simulate the actual call with caller and recipient, especially for a list. A direct spoke-pair
 `getSwapQuote` returns zero. More routing details are in
-[the protocol reference](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/docs/PROTOCOL.md).
+[the protocol reference](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/docs/PROTOCOL.md).
 
 ## Queue functions
 

@@ -6,16 +6,26 @@ description: Security considerations and trust assumptions
 
 # Security
 
-:::warning Upcoming interface
-This page describes the upcoming `0.11.0` interface on
-[`fix/guardian-audit`](https://github.com/coasify/dollar/tree/fix/guardian-audit), documented here at
-[`ae25d5a`](https://github.com/coasify/dollar/tree/ae25d5a48dcec9f6731773fa0290927d50d638da).
-Deployment addresses and configuration for this interface are pending verification on the
-[Contract addresses](/resources/addresses) page. An existing deployment may expose a different version.
+:::info Ethereum mainnet
+The proxy reports `1.0.0`. This reference follows
+[`b1668d0`](https://github.com/coasify/dollar/tree/b1668d0835c896e6ec310f51b3598e97cc5e46b0).
+See [Contract addresses](/resources/addresses) for the onchain snapshot and verification limitations.
 :::
 
 The software is experimental. The [OpenZeppelin reports](#audits) cover the code versions identified
 below, rather than every subsequent change. A review does not establish that software is free of defects.
+
+## Mainnet verification status
+
+The role and configuration snapshot on [Contract addresses](/resources/addresses) records a
+**3-hour governor delay** and a **6-hour upgrader delay**, not the governance script defaults of
+7 and 14 days. The guardian and unpauser Safes each read as 2 of 2 in that snapshot; final intended
+ownership and thresholds have not been confirmed.
+
+An earlier bytecode comparison matched the implementation, `SpokeAdminLib` and `SwapRouteLib` to the
+release reference, but found a mismatch for `SpokeLifecycleLib` at
+`0xd55D9474d8fBc3b3883aa1b244cDA06a3e397A5A`. Its exact deployed source/build remains unresolved.
+The reported version and successful execution tests do not establish full source/build equivalence.
 
 ## Trust assumptions
 
@@ -121,7 +131,7 @@ issuer restriction. A preview calculates the basket without testing these transf
 
 The governor can change probe exemptions through its configured timelock. Exemption removes the
 zero-value check, while a real payout still uses the token's own transfer controls. See the repository's
-[issuer-control notes](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/SECURITY.md#exit-probe-and-issuer-transfer-controls)
+[issuer-control notes](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/SECURITY.md#exit-probe-and-issuer-transfer-controls)
 for token-listing considerations.
 
 ### Parked escrow and cancellation
@@ -172,9 +182,9 @@ The published OpenZeppelin reports identify these historical review versions:
 | [Report #01](/audits/dollarstore-openzeppelin-audit-01.pdf), pre-v3 single-pool protocol | March 10, 2026 | `091852e` | `591a4ac` |
 | [Report #02](/audits/dollarstore-openzeppelin-audit-02.pdf), v3 hub-and-spoke rebuild | August 5, 2026 | `d4cea9a` | `5e2e241` |
 
-These reports are not reviews of the entire `0.11.0` branch at `ae25d5a`. Consult the reports for the
+These reports do not establish a review of the entire `1.0.0` release reference at `b1668d0`. Consult the reports for the
 scope and status of individual findings and the
-[repository audit index](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/audits/README.md)
+[repository audit index](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/audits/README.md)
 for commit provenance. The reports use the old `contracts/src/` paths; current source lives in `src/`.
 
 ## Operational limitations

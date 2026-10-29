@@ -8,8 +8,8 @@ description: Dollar Store protocol end-user terms and conditions
 
 **Last Updated: October 23, 2026**
 
-**Technical version described:** the upcoming `0.11.0` interface at
-[`ae25d5a`](https://github.com/coasify/dollar/tree/ae25d5a48dcec9f6731773fa0290927d50d638da).
+**Technical version described:** the `1.0.0` interface at
+[`b1668d0`](https://github.com/coasify/dollar/tree/b1668d0835c896e6ec310f51b3598e97cc5e46b0).
 This version description does not establish the version running on any network. Verify a deployment
 against [Contract addresses](/resources/addresses) before using its interface.
 

@@ -2,10 +2,10 @@ import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
-// Keep the current deployment's canonical domain; the xyz project can use its existing variant flag.
-const siteUrl = process.env.SITE_URL ?? (process.env.SITE_VARIANT === 'xyz'
-  ? 'https://docs.dollarstore.xyz'
-  : 'https://docs.dollarstore.world');
+// The current public documentation uses .xyz; explicit overrides support other deployments.
+const siteUrl = process.env.SITE_URL ?? (process.env.SITE_VARIANT === 'world'
+  ? 'https://docs.dollarstore.world'
+  : 'https://docs.dollarstore.xyz');
 
 const config: Config = {
   title: 'DollarStore',
@@ -55,7 +55,7 @@ const config: Config = {
     announcementBar: {
       id: 'protocol-access-notice',
       content:
-        'Upcoming 0.11.0 interface — <a href="/resources/addresses">verify deployment version</a>. Protocol use is subject to the <a href="/resources/protocol-terms">Protocol Terms</a> and is not available to U.S. Persons.',
+        'Ethereum mainnet · v1.0.0 — <a href="/resources/addresses">contract addresses</a>. Protocol use is subject to the <a href="/resources/protocol-terms">Protocol Terms</a> and is not available to U.S. Persons.',
       backgroundColor: '#f8f1e0',
       textColor: '#7a5a0e',
       isCloseable: false,

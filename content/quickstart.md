@@ -1,7 +1,7 @@
 ---
 sidebar_position: 2
 title: Quickstart
-description: Integrate the DollarStore 0.11.0 interface
+description: Integrate the DollarStore 1.0.0 interface
 ---
 
 # Quickstart
@@ -9,11 +9,24 @@ description: Integrate the DollarStore 0.11.0 interface
 Integrate against the **DollarStore proxy**, never the implementation address.
 
 :::info Interface version
-These examples describe the upcoming **0.11.0** interface at
-[`ae25d5a`](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/src/interfaces/IDollarStore.sol).
+These examples describe the **1.0.0** interface at
+[`b1668d0`](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/src/interfaces/IDollarStore.sol).
 Confirm the matching network, release and proxy in [Addresses](/resources/addresses) before sending
 transactions; a deployment with an older interface needs its own ABI.
 :::
+
+## Ethereum mainnet configuration
+
+| Setting | Value |
+|---------|-------|
+| Chain ID | `1` |
+| DollarStore proxy and approval spender | `0x825e1e13D804816b8ccdA405F1a7B7915461dDc4` |
+| Core pool | `0` — USDC and USDS |
+| USDG spoke | `1` — USDG or a listed hub asset can fund this pool |
+
+Use an Ethereum mainnet RPC, native ETH for gas, and the `1.0.0` ABI from the release reference above.
+The [Addresses](/resources/addresses) page lists token contracts, decimals and the configuration snapshot.
+These are live contracts: use a local mainnet fork for tests that should not spend real assets.
 
 ## The five things to know
 
@@ -125,7 +138,8 @@ const approvalHash = await walletClient.writeContract({
   address: USDC, abi: erc20Abi, functionName: 'approve',
   args: [dollarStore, budget],
 })
-await publicClient.waitForTransactionReceipt({ hash: approvalHash })
+const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash })
+if (approvalReceipt.status !== 'success') throw new Error('Token approval reverted')
 
 const { request } = await publicClient.simulateContract({
   account: user,
@@ -137,6 +151,7 @@ const { request } = await publicClient.simulateContract({
 })
 const hash = await walletClient.writeContract(request)
 const receipt = await publicClient.waitForTransactionReceipt({ hash })
+if (receipt.status !== 'success') throw new Error('Swap reverted')
 const joined = parseEventLogs({
   abi,
   eventName: 'QueueJoined',

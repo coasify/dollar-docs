@@ -1,13 +1,13 @@
 ---
 sidebar_position: 3
 title: Events
-description: Events emitted by the DollarStore 0.11.0 interface
+description: Events emitted by the DollarStore 1.0.0 interface
 ---
 
 # Events
 
-These event signatures describe the upcoming **0.11.0** interface at
-[`ae25d5a`](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/src/interfaces/IDollarStore.sol).
+These event signatures describe the **1.0.0** interface at
+[`b1668d0`](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/src/interfaces/IDollarStore.sol).
 Use the ABI for the actual deployment. Protocol events come from the **proxy address**, including
 events emitted through linked-library execution.
 
@@ -104,7 +104,7 @@ event SpokeWithdrawn(
 
 `provider` is the withdrawing caller. `sharesBurned` is a share count; `spokeUnits` and `hubUnits` are
 normalized six-decimal totals paid from each side. The hub total is distributed across hub tokens.
-The 0.11.0 interface has no `SpokeLiquidityRemoved` or `SpokeRedeemed` event.
+The 1.0.0 interface has no `SpokeLiquidityRemoved` or `SpokeRedeemed` event.
 
 ## Swap events
 
@@ -208,7 +208,7 @@ escrow, which remains the original offered token. No DLRS or spoke receipt is mi
 
 The owner retries `cancelQueue` when that token can be returned. A failed parked cancellation reverts
 `EscrowTransferFailed`, producing no new event. A successful transaction that emits `QueueParked` is
-not a refund. The 0.11.0 interface has no `QueuePositionRefunded` event.
+not a refund. The 1.0.0 interface has no `QueuePositionRefunded` event.
 
 ## Registry events
 

@@ -6,8 +6,8 @@ description: Contract architecture and integration points
 
 # Capabilities overview
 
-This reference describes the upcoming **0.11.0** interface at
-[`ae25d5a`](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/src/interfaces/IDollarStore.sol).
+This reference describes the **1.0.0** interface at
+[`b1668d0`](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/src/interfaces/IDollarStore.sol).
 Use [Addresses](/resources/addresses) to confirm a proxy and release that match it.
 
 | Contract | Purpose |

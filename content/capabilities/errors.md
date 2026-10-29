@@ -1,13 +1,13 @@
 ---
 sidebar_position: 4
 title: Errors
-description: Error conditions and handling for the DollarStore 0.11.0 interface
+description: Error conditions and handling for the DollarStore 1.0.0 interface
 ---
 
 # Errors
 
-These protocol errors describe the upcoming **0.11.0** interface at
-[`ae25d5a`](https://github.com/coasify/dollar/blob/ae25d5a48dcec9f6731773fa0290927d50d638da/src/interfaces/IDollarStore.sol).
+These protocol errors describe the **1.0.0** interface at
+[`b1668d0`](https://github.com/coasify/dollar/blob/b1668d0835c896e6ec310f51b3598e97cc5e46b0/src/interfaces/IDollarStore.sol).
 Use the matching deployment ABI. Token, OpenZeppelin and oracle calls can also propagate errors;
 the protocol's custom errors are not the only possible revert data.
 

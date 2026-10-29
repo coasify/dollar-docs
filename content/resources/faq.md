@@ -217,7 +217,7 @@ positions counted as visits. Measure the intended call against the deployment yo
 ### What chains is the protocol on?
 
 See [Addresses](/resources/addresses) for networks, release status and deployment addresses. These
-docs describe the **upcoming v0.11 interface**; check a deployment's `version()` and release details
+docs describe the **deployed v1.0.0 interface**; check a deployment's `version()` and release details
 before using these signatures against a live address.
 
 ### Is the contract upgradeable?
@@ -230,7 +230,7 @@ namespaced storage. See [Security](/resources/security) for governance and upgra
 
 Published reports and the revisions they cover are listed under
 [Audits](/resources/security#audits). Check the report scope against the release you use; a report
-for an earlier revision does not automatically cover every function in this upcoming interface.
+for an earlier revision does not automatically cover every function in this interface.
 The software remains experimental.
 
 ### Where's the source code?

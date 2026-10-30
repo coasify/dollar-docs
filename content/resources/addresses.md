@@ -8,8 +8,9 @@ description: Ethereum mainnet deployment and configuration
 
 ## Ethereum mainnet
 
-Onchain configuration checked at block **26,301,797**, 2026-10-29 23:50:35 UTC. This is a dated snapshot;
-read current settings before submitting transactions.
+The original deployment configuration was checked at block **26,301,797**, 2026-10-29 23:50:35 UTC.
+The PYUSD listing and pool configuration below were checked separately at block **26,308,073** on
+2026-10-30. These are dated snapshots; read current settings before submitting transactions.
 
 | Item | Value |
 |------|-------|
@@ -31,19 +32,38 @@ The indexing start is the recorded scan boundary, rather than a deployment trans
 | USDC | [`0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`](https://etherscan.io/address/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48) | 6 | Core `0` |
 | USDS | [`0xdC035D45d973E3EC169d2276DDab16f1e407384F`](https://etherscan.io/address/0xdC035D45d973E3EC169d2276DDab16f1e407384F) | 18 | Core `0` |
 | USDG | [`0xe343167631d89B6Ffc58B88d6b7fB0228795491D`](https://etherscan.io/address/0xe343167631d89B6Ffc58B88d6b7fB0228795491D) | 6 | Spoke `1` |
+| PYUSD | [`0x6c3ea9036406852006290770BEdFcAbA0e23A0e8`](https://etherscan.io/address/0x6c3ea9036406852006290770BEdFcAbA0e23A0e8) | 6 | Spoke `2` |
 
 USDT is not part of this verified listing snapshot. Other token names in conceptual examples do not
 establish a live listing; discover the governed registry onchain.
 
-| Pool setting | Core `0` | USDG spoke `1` |
-|--------------|----------|----------------|
-| Launch cap | $10,000,000 | $5,000,000 |
-| Status at snapshot | Active; unpaused | Active; unpaused |
-| Minimum hub backing for spoke-to-hub swaps | Not applicable | $1 |
+| Pool setting | Core `0` | USDG spoke `1` | PYUSD spoke `2` |
+|--------------|----------|----------------|-----------------|
+| Launch cap | $10,000,000 | $5,000,000 | $5,000,000 |
+| Status at respective snapshot | Active; unpaused | Active; unpaused | Active; unpaused |
+| Minimum hub backing for spoke-to-hub swaps | Not applicable | $1 | $1 |
 
 Both pools and the global protocol were unpaused; deposit pauses for USDC, USDS and USDG were off.
-The spoke can be funded with its own token or a listed hub asset. Global or pool pauses block new
+The PYUSD pool and its deposit control were also unpaused at the later check, with zero token and
+hub reserves. A listing does not establish available swap liquidity.
+Each spoke can be funded with its own token or a listed hub asset. Global or pool pauses block new
 inflows while withdrawals and queue cancellation remain available under their normal token controls.
+
+### PYUSD spoke creation
+
+Pool **2** was created inside the existing DollarStore proxy using the existing PayPal USD token;
+there is no separate PYUSD application contract to approve.
+
+| Creation detail | Value |
+|-----------------|-------|
+| Created | 2026-10-30 15:44:35 UTC |
+| Ethereum block | [`26306550`](https://etherscan.io/block/26306550) |
+| Transaction | [`0x673df61db39c82a491bc2fc65857f1b8f6c8ad1a79bff59248876e3256d21067`](https://etherscan.io/tx/0x673df61db39c82a491bc2fc65857f1b8f6c8ad1a79bff59248876e3256d21067) |
+| Launch cap at creation | $5,000,000 / `5000000000000` normalized units |
+| Minimum DLRS reserve at creation | $1 / `1000000` normalized units |
+
+The successful creation transaction emitted `PoolCreated`, `AssetListed`, `MinDlrsReserveSet` and
+`LaunchCapSet`. PYUSD has **6 native decimals**; its Chainlink PYUSD/USD feed has **8 decimals**.
 
 ## Oracle configuration
 
@@ -52,12 +72,15 @@ inflows while withdrawals and queue cancellation remain available under their no
 | USDC | [`0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6`](https://etherscan.io/address/0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6) |
 | USDS | [`0xfF30586cD0F29eD462364C7e81375FC0C71219b1`](https://etherscan.io/address/0xfF30586cD0F29eD462364C7e81375FC0C71219b1) |
 | USDG | [`0x14f0737d6b705259e521EA6E9E3506AC78dBd311`](https://etherscan.io/address/0x14f0737d6b705259e521EA6E9E3506AC78dBd311) |
+| PYUSD | [`0x8f1dF6D7F2db73eECE86a18b4381F4707b918FB1`](https://etherscan.io/address/0x8f1dF6D7F2db73eECE86a18b4381F4707b918FB1) |
 
 The inflow guard uses `pegTolerance() = 50` basis points (±0.5%) and
 `maxStaleness() = 90000` seconds (25 hours). These checks reject unhealthy inflows; they do not
 set a persistent pause flag.
 
 ## Roles and timelocks
+
+The following role and delay observations are from the original 2026-10-29 snapshot.
 
 | Authority | Observed holder | Configuration at snapshot |
 |-----------|-----------------|---------------------------|

@@ -23,8 +23,10 @@ transactions; a deployment with an older interface needs its own ABI.
 | DollarStore proxy and approval spender | `0x825e1e13D804816b8ccdA405F1a7B7915461dDc4` |
 | Core pool | `0` — USDC and USDS |
 | USDG spoke | `1` — USDG or a listed hub asset can fund this pool |
+| PYUSD spoke | `2` — PYUSD or a listed hub asset can fund this pool |
 
 Use an Ethereum mainnet RPC, native ETH for gas, and the `1.0.0` ABI from the release reference above.
+PYUSD uses six native decimals and the same proxy approval spender.
 The [Addresses](/resources/addresses) page lists token contracts, decimals and the configuration snapshot.
 These are live contracts: use a local mainnet fork for tests that should not spend real assets.
 
